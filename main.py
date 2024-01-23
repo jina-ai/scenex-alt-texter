@@ -24,10 +24,12 @@ def run_test():
 
 run_test()
 
-# post_ids = get_post_ids(status="draft")
+post_ids = get_post_ids(status="draft")
+for post_id in post_ids:
+    original_post = get_post(post_id)
+    print(original_post["title"])
 
 # for post_id in post_ids:
-# original_post = get_post(post_id)
 # updated_post_data = add_alts(post_id)
 
 # if is_post_changed(original_post, updated_post_data):
