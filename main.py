@@ -1,25 +1,14 @@
-import json
-import os
-
-import requests
-from dotenv import load_dotenv
 from rich.console import Console
 
 from helper import (add_alts, create_alt_text, get_ghost_token, get_post,
                     get_post_ids, is_post_changed, update_post)
 
-load_dotenv()
-
 console = Console(tab_size=2)
 print = console.print
 
-ghost_url = "https://jina-ai-gmbh.ghost.io/"
-
-api_key = os.environ["GHOST_API_KEY"]
-ghost_token = get_ghost_token(api_key)
-
 
 def run_test():
+    # get dummy post
     post_id = "65ae57f88da8040001e16ec5"
 
     original_post = get_post(post_id)
