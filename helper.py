@@ -1,15 +1,21 @@
 import json
+import os
 import time
 
 import jwt
 import requests
+from dotenv import load_dotenv
 from rich.console import Console
 
-from config import (ghost_api_key, ghost_url, image_formats, max_alt_length,
-                    scenex_api_key)
+load_dotenv()
+
+from config import ghost_url, max_alt_length
 
 console = Console(tab_size=2)
 print = console.print
+
+ghost_api_key = os.environ["GHOST_API_KEY"]
+scenex_api_key = os.environ["SCENEX_API_KEY"]
 
 
 def get_ghost_token(api_key=ghost_api_key):
