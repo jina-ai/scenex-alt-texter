@@ -118,30 +118,32 @@ def add_alts(post_id, max_tries=3):
     post = get_post(post_id)
     print(f"- Processing [blue]{post['title']}[/blue]")
 
-    # sometimes SX has a problem, so give it a few tries
-
-    # Process post featured image
+    # Process featured image
     if not post["feature_image_alt"]:
-        # Run several times in case of error
-        # print(
-        # f"\t- Adding featured image alt text. Attempt {alt_text_tries+1}/{max_tries}"
-        # )
         alt_text = create_alt_text(post["feature_image"])
 
         if alt_text:
-            post["feature_image_alt"] = alt_text[:125]
+            post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
 
     # Process post body
-
     # convert string to dict if lexical data exists. Otherwise don't touch it
     if post["lexical"]:
         post["lexical"] = json.loads(post["lexical"])
 
         for row in post["lexical"]["root"]["children"]:
             if row["type"] == "image":
+                if "alt" not in row:  # older posts don't even have the alt field
+                    row["alt"] = None
+
                 if not row["alt"]:
                     alt_text = create_alt_text(row["src"])
                     row["alt"] = alt_text
+                    # else:
+                    # # print(f"[red]alt attribute doesn't exist for {row['src']}[/red]")
+                    # alt_text = create_alt_text(row["src"])
+                    # row["alt"] = alt_text
+
+                    print(row)
 
         # convert dict back to string
         post["lexical"] = json.dumps(post["lexical"])
@@ -158,7 +160,6 @@ def is_post_changed(original_post, new_post):
         if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
             return True
 
-    print(f"\t Post {original_post['title']} [yellow]unchanged[/yellow]")
     return False
 
 
