@@ -25,6 +25,6 @@ for post_id in post_ids:
 if updated_posts:
     print("\nUpdated posts")
     for post in updated_posts:
-        print(post["title"])
+        print(f'\t- {post["title"]}')
 else:
     print("\nNo posts to update")
