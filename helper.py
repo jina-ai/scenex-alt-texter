@@ -150,15 +150,15 @@ def add_alts(post_id, max_tries=3):
 
 
 def is_post_changed(original_post, new_post):
-    try:
+    if original_post["lexical"] and new_post["lexical"]:
         if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
             return True
 
+    if original_post["feature_image_alt"] and new_post["feature_image_alt"]:
         if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
             return True
-    except:  # lots of things can go wrong, just catch them all
-        return False
 
+    print(f"\t Post {original_post['title']} [yellow]unchanged[/yellow]")
     return False
 
 
