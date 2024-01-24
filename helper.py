@@ -7,9 +7,10 @@ import requests
 from dotenv import load_dotenv
 from rich.console import Console
 
+from config import ghost_url, max_alt_length, scenex_url
+
 load_dotenv()
 
-from config import ghost_url, max_alt_length
 
 console = Console(tab_size=2)
 print = console.print
@@ -30,7 +31,7 @@ def get_ghost_token(api_key=ghost_api_key):
     return token
 
 
-ghost_token = get_ghost_token(ghost_api_key)
+ghost_token = get_ghost_token()
 ghost_headers = {
     "Authorization": f"Ghost {ghost_token}",
     "Content-Type": "application/json",
@@ -38,6 +39,9 @@ ghost_headers = {
 
 
 def get_post_ids(status="published", limit=10_000, order="published_at desc"):
+    # update token
+    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
+
     params = {
         "filter": f"status:{status}",
         "limit": limit,
@@ -58,10 +62,17 @@ def get_post_ids(status="published", limit=10_000, order="published_at desc"):
 
 
 def get_post(post_id):
-    headers = {"Authorization": f"Ghost {ghost_token}"}
     url = f"{ghost_url}/ghost/api/admin/posts/{post_id}"
 
-    response = requests.get(url, headers=headers, params={"formats": "lexical"})
+    # update token
+    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
+
+    # token = get_ghost_token()
+    # headers = {
+    # "Authorization": f"Ghost {token}",
+    # "Content-Type": "application/json",
+    # }
+    response = requests.get(url, headers=ghost_headers, params={"formats": "lexical"})
     if response.status_code == 200:
         post_data = response.json()
         post = post_data["posts"][0]
@@ -71,75 +82,112 @@ def get_post(post_id):
         return f"Error: {response.status_code}"
 
 
-def create_alt_text(image_url, max_length=max_alt_length):
-    filename = image_url.split("/")[-1]
-    data = {"data": [{"task_id": "alt_text", "languages": ["en"], "image": image_url}]}
+def create_alt_text(image_url, max_length=max_alt_length, max_tries=3):
+    # sometimes image_url is None, so we need to handle that
+    if image_url:
+        filename = image_url.split("/")[-1]
+        data = {
+            "data": [{"task_id": "alt_text", "languages": ["en"], "image": image_url}]
+        }
 
-    scenex_headers = {
-        "x-api-key": f"token {scenex_api_key}",
-        "content-type": "application/json",
-    }
+        scenex_headers = {
+            "x-api-key": f"token {scenex_api_key}",
+            "content-type": "application/json",
+        }
 
-    console.print(
-        f"\t- Sending {filename} to [bright_magenta]SceneXplain[/bright_magenta]"
-    )
-    response = requests.post(
-        "https://api.scenex.jina.ai/v1/describe", headers=scenex_headers, json=data
-    ).json()
-    # print(response)
-    alt_text = response["result"][0]["text"][:max_length]
+        # implement max tries since sometimes SX has issues
+        alt_text = None
+        alt_text_tries = 0
 
-    return alt_text
+        while (not alt_text) and (alt_text_tries < max_tries):
+            console.print(
+                f"\t- Sending {filename} to [bright_magenta]SceneXplain[/bright_magenta]"
+            )
+            response = requests.post(
+                scenex_url, headers=scenex_headers, json=data
+            ).json()
+            # print(response)
+            alt_text = response["result"][0]["text"][:max_length]
+
+        return alt_text
+    else:
+        return None
 
 
-def add_alts(post_id):
+def add_alts(post_id, max_tries=3):
     post = get_post(post_id)
     print(f"- Processing [blue]{post['title']}[/blue]")
 
+    # sometimes SX has a problem, so give it a few tries
+
     # Process post featured image
     if not post["feature_image_alt"]:
-        print("- Adding featured image alt text")
-        post["feature_image_alt"] = create_alt_text(post["feature_image"])
+        # Run several times in case of error
+        # print(
+        # f"\t- Adding featured image alt text. Attempt {alt_text_tries+1}/{max_tries}"
+        # )
+        alt_text = create_alt_text(post["feature_image"])
+
+        if alt_text:
+            post["feature_image_alt"] = alt_text[:125]
 
     # Process post body
 
-    # convert string to dict
-    post["lexical"] = json.loads(post["lexical"])
+    # convert string to dict if lexical data exists. Otherwise don't touch it
+    if post["lexical"]:
+        post["lexical"] = json.loads(post["lexical"])
 
-    for row in post["lexical"]["root"]["children"]:
-        if row["type"] == "image":
-            if not row["alt"]:
-                alt_text = create_alt_text(row["src"])
-                row["alt"] = alt_text
+        for row in post["lexical"]["root"]["children"]:
+            if row["type"] == "image":
+                if not row["alt"]:
+                    alt_text = create_alt_text(row["src"])
+                    row["alt"] = alt_text
 
-    # convert dict back to string
-    post["lexical"] = json.dumps(post["lexical"])
+        # convert dict back to string
+        post["lexical"] = json.dumps(post["lexical"])
 
     return post
 
 
 def is_post_changed(original_post, new_post):
-    if (
-        json.loads(original_post["lexical"]) != json.loads(new_post["lexical"])
-        or original_post["feature_image_alt"] != new_post["feature_image_alt"]
-    ):
-        return True
-    else:
+    try:
+        if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
+            return True
+
+        if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
+            return True
+    except:  # lots of things can go wrong, just catch them all
         return False
+
+    return False
 
 
 def update_post(post_id, post_data):
     url = f"{ghost_url}ghost/api/admin/posts/{post_id}/"
-
-    # keeps whining about jwt token expired, so let's recreate before we send the data
-    ghost_headers = {
-        "Authorization": f"Ghost {ghost_token}",
-        "Content-Type": "application/json",
-    }
-
     data = {"posts": [post_data]}
 
+    # keeps whining about jwt token expired, so let's recreate before we send the data
+    token = get_ghost_token()
+    ghost_headers = {
+        "Authorization": f"Ghost {token}",
+        "Content-Type": "application/json",
+    }
     console.print("\t- Sending updated post to [cyan]Ghost[/cyan]")
     response = requests.put(url, headers=ghost_headers, json=data)
 
     return response.json()
+
+
+def run_test():
+    # get dummy post
+    post_id = "65ae57f88da8040001e16ec5"
+
+    original_post = get_post(post_id)
+    updated_post_data = add_alts(post_id)
+
+    if is_post_changed(original_post, updated_post_data):
+        response = update_post(post_id, updated_post_data)
+
+        print(response)
+    else:
+        print(f"\t- No change needed for [blue]{original_post['title']}[/blue]")
