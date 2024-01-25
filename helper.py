@@ -8,19 +8,21 @@ import yaml
 from dotenv import load_dotenv
 from rich.console import Console
 
-# from config import ghost_url, max_alt_length, scenex_url
-
-load_dotenv()
-
+# load config
 with open("config.yml") as file:
     config = yaml.safe_load(file)
 
+max_alt_length = config["max_alt_length"]
+ghost_url = config["ghost_url"]
+scenex_url = config["scenex_url"]
+
+# load secrets
+load_dotenv()
+ghost_api_key = os.environ["GHOST_API_KEY"]
+scenex_api_key = os.environ["SCENEX_API_KEY"]
 
 console = Console(tab_size=2)
 print = console.print
-
-ghost_api_key = os.environ["GHOST_API_KEY"]
-scenex_api_key = os.environ["SCENEX_API_KEY"]
 
 
 def get_ghost_token(api_key=ghost_api_key):
