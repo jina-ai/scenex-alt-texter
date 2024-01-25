@@ -168,11 +168,7 @@ def update_post(post_id, post_data):
     data = {"posts": [post_data]}
 
     # keeps whining about jwt token expired, so let's recreate before we send the data
-    token = get_ghost_token()
-    ghost_headers = {
-        "Authorization": f"Ghost {token}",
-        "Content-Type": "application/json",
-    }
+    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
     console.print("\t- Sending updated post to [cyan]Ghost[/cyan]")
     response = requests.put(url, headers=ghost_headers, json=data)
 
