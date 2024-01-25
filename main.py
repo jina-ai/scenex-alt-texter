@@ -1,5 +1,3 @@
-import sys
-
 from rich.console import Console
 
 from helper import (add_alts, get_post, get_post_ids, is_post_changed,
@@ -12,14 +10,13 @@ post_ids = get_post_ids(status="published")
 updated_posts = []
 
 for post_id in post_ids:
-    if post_id == "6336a08987b80b004db807bd":
-        original_post = get_post(post_id)
-        updated_post_data = add_alts(post_id)
-        if is_post_changed(original_post, updated_post_data):
-            response = update_post(post_id, updated_post_data)
-            updated_posts.append(updated_post_data)
-        else:
-            print("\t- No change needed")
+    original_post = get_post(post_id)
+    updated_post_data = add_alts(post_id)
+    if is_post_changed(original_post, updated_post_data):
+        response = update_post(post_id, updated_post_data)
+        updated_posts.append(updated_post_data)
+    else:
+        print("\t- No change needed")
 
 # Print summary
 if updated_posts:
