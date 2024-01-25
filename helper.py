@@ -4,12 +4,16 @@ import time
 
 import jwt
 import requests
+import yaml
 from dotenv import load_dotenv
 from rich.console import Console
 
-from config import ghost_url, max_alt_length, scenex_url
+# from config import ghost_url, max_alt_length, scenex_url
 
 load_dotenv()
+
+with open("config.yml") as file:
+    config = yaml.safe_load(file)
 
 
 console = Console(tab_size=2)
@@ -138,12 +142,6 @@ def add_alts(post_id, max_tries=3):
                 if not row["alt"]:
                     alt_text = create_alt_text(row["src"])
                     row["alt"] = alt_text
-                    # else:
-                    # # print(f"[red]alt attribute doesn't exist for {row['src']}[/red]")
-                    # alt_text = create_alt_text(row["src"])
-                    # row["alt"] = alt_text
-
-                    print(row)
 
         # convert dict back to string
         post["lexical"] = json.dumps(post["lexical"])
@@ -152,11 +150,11 @@ def add_alts(post_id, max_tries=3):
 
 
 def is_post_changed(original_post, new_post):
-    if original_post["lexical"] and new_post["lexical"]:
+    if new_post["lexical"]:
         if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
             return True
 
-    if original_post["feature_image_alt"] and new_post["feature_image_alt"]:
+    if new_post["feature_image_alt"]:
         if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
             return True
 
