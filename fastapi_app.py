@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -7,7 +8,10 @@ import requests
 import yaml
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query
+from fastapi.responses import HTMLResponse, StreamingResponse
 from rich.console import Console
+
+from helper import get_ghost_token, get_post_ids
 
 # load config
 with open("config.yml") as file:
@@ -28,18 +32,6 @@ print = console.print
 app = FastAPI()
 
 
-def get_ghost_token(api_key=ghost_api_key):
-    api_id, api_secret = api_key.split(":")
-
-    payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, "aud": "/admin/"}
-
-    token = jwt.encode(
-        payload, bytes.fromhex(api_secret), algorithm="HS256", headers={"kid": api_id}
-    )
-
-    return token
-
-
 ghost_token = get_ghost_token()
 ghost_headers = {
     "Authorization": f"Ghost {ghost_token}",
@@ -47,44 +39,33 @@ ghost_headers = {
 }
 
 
-@app.get("/post_ids")
-def get_post_ids(status="published", limit=10_000, order="published_at desc"):
-    # update token
-    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
-
-    params = {
-        "filter": f"status:{status}",
-        "limit": limit,
-        "order": order,
-    }
-
-    response = requests.get(
-        f"{ghost_url}/ghost/api/admin/posts/", headers=ghost_headers, params=params
-    )
-
-    if response.status_code == 200:
-        posts_data = response.json()
-        post_ids = [post["id"] for post in posts_data["posts"]]
-    else:
-        print(f"Failed to retrieve posts: {response.text}")
-
-    return post_ids
-
-
-@app.get("/posts")
-def get_all_posts(
+async def generate_posts(
     status: str = Query(default="published", description="Post status"),
     limit: int = Query(default=10, description="Number of posts to retrieve"),
     order: str = Query(default="published_at desc", description="Order to sort"),
 ):
-    all_posts = []
+    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
+
     post_ids = get_post_ids(status, limit, order)
 
     for post_id in post_ids:
         post = get_post(post_id)
-        all_posts.append(post)
+        yield json.dumps(post) + "\n"
 
-    return all_posts
+    # posts = [get_post(post_id) for post_id in post_ids]
+
+    # return posts
+
+
+@app.get("/posts")
+def stream_posts(
+    status: str = Query(default="published", description="Post status"),
+    limit: int = Query(default=10, description="Number of posts to retrieve"),
+    order: str = Query(default="published_at desc", description="Order to sort"),
+):
+    return StreamingResponse(
+        generate_posts(status, limit, order), media_type="application/json"
+    )
 
 
 def get_post(post_id):
@@ -103,7 +84,6 @@ def get_post(post_id):
         return f"Error: {response.status_code}"
 
 
-@app.get("/get_alt/{image_url}")
 def create_alt_text(
     image_url: str,
     max_length: int = Query(
@@ -191,7 +171,10 @@ def post_to_json(post_id):
         file.write(json.dumps(lexical))
 
 
-def add_alts(post_id, max_tries=3):
+def add_alts_orig(
+    post_id: str,
+    max_tries: int = Query(default=3, description="Maximum tries to create alt image"),
+):
     post = get_post(post_id)
     print(f"- Processing [blue]{post['title']}[/blue]")
 
@@ -208,6 +191,31 @@ def add_alts(post_id, max_tries=3):
         post["lexical"] = json.dumps(post["lexical"])
 
     return post
+
+
+@app.get("/{post_id}/add_alts")
+async def add_alts(
+    post_id: str,
+    max_tries: int = Query(default=3, description="Maximum tries to create alt image"),
+):
+    yield json.dumps({"id": 1, "message": "Getting post"})
+    post = get_post(post_id)
+    await asyncio.sleep(1)
+    yield json.dumps({"id": 2, "message": f"Processing {post['title']}"})
+
+    # Process featured image
+    if not post["feature_image_alt"]:
+        alt_text = create_alt_text(post["feature_image"])
+        if alt_text:
+            post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
+
+    # Process post body
+    if post["lexical"]:
+        post["lexical"] = json.loads(post["lexical"])
+        add_alt_text_recursive(post["lexical"]["root"]["children"])
+        post["lexical"] = json.dumps(post["lexical"])
+
+    # return post
 
 
 def add_alt_text_recursive(rows):
