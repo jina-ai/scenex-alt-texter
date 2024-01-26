@@ -73,11 +73,6 @@ def get_post(post_id):
     # update token
     ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
 
-    # token = get_ghost_token()
-    # headers = {
-    # "Authorization": f"Ghost {token}",
-    # "Content-Type": "application/json",
-    # }
     response = requests.get(url, headers=ghost_headers, params={"formats": "lexical"})
     if response.status_code == 200:
         post_data = response.json()
@@ -120,37 +115,6 @@ def create_alt_text(image_url, max_length=max_alt_length, max_tries=3):
         return None
 
 
-def add_alts(post_id, max_tries=3):
-    post = get_post(post_id)
-    print(f"- Processing [blue]{post['title']}[/blue]")
-
-    # Process featured image
-    if not post["feature_image_alt"]:
-        alt_text = create_alt_text(post["feature_image"])
-
-        if alt_text:
-            post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
-
-    # Process post body
-    # convert string to dict if lexical data exists. Otherwise don't touch it
-    if post["lexical"]:
-        post["lexical"] = json.loads(post["lexical"])
-
-        for row in post["lexical"]["root"]["children"]:
-            if row["type"] == "image":
-                if "alt" not in row:  # older posts don't even have the alt field
-                    row["alt"] = None
-
-                if not row["alt"]:
-                    alt_text = create_alt_text(row["src"])
-                    row["alt"] = alt_text
-
-        # convert dict back to string
-        post["lexical"] = json.dumps(post["lexical"])
-
-    return post
-
-
 def is_post_changed(original_post, new_post):
     if new_post["lexical"]:
         if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
@@ -188,3 +152,44 @@ def run_test():
         print(response)
     else:
         print(f"\t- No change needed for [blue]{original_post['title']}[/blue]")
+
+
+def post_to_json(post_id):
+    post = get_post(post_id)
+    lexical = json.loads(post["lexical"])
+
+    with open(f"{post['title']}.json", "w") as file:
+        file.write(json.dumps(lexical))
+
+
+def add_alts(post_id, max_tries=3):
+    post = get_post(post_id)
+    print(f"- Processing [blue]{post['title']}[/blue]")
+
+    # Process featured image
+    if not post["feature_image_alt"]:
+        alt_text = create_alt_text(post["feature_image"])
+        if alt_text:
+            post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
+
+    # Process post body
+    if post["lexical"]:
+        post["lexical"] = json.loads(post["lexical"])
+        add_alt_text_recursive(post["lexical"]["root"]["children"])
+        post["lexical"] = json.dumps(post["lexical"])
+
+    return post
+
+
+def add_alt_text_recursive(rows):
+    for row in rows:
+        if row.get("type") == "image":
+            if "alt" not in row:  # older posts don't even have the alt field
+                row["alt"] = None
+            if not row["alt"]:
+                alt_text = create_alt_text(row["src"])
+                row["alt"] = alt_text
+
+        # Recursively process nested rows
+        if "children" in row and isinstance(row["children"], list):
+            add_alt_text_recursive(row["children"])
