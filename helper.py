@@ -156,8 +156,10 @@ class GhostTagger(AltTexter):
             "filter": f"status:{status}",
             "limit": limit,
             "order": order,
+            "fields": "id",
         }
 
+        log.info("Getting post IDs")
         response = requests.get(
             f"{self.ghost_url}/ghost/api/admin/posts/",
             headers=ghost_headers,
