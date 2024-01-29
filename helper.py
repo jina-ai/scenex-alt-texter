@@ -1,6 +1,6 @@
 import json
 import logging
-import os
+# import os
 import time
 
 import jwt
@@ -8,8 +8,8 @@ import requests
 from rich.console import Console
 from rich.logging import RichHandler
 
-if os.path.isfile(".env"):
-    from dotenv import load_dotenv
+# if os.path.isfile(".env"):
+# from dotenv import load_dotenv
 
 console = Console(tab_size=2)
 
@@ -24,7 +24,7 @@ log = logging.getLogger("rich")
 
 class AltTexter:
     def __init__(self, url: str, scenex_api_key: str):
-        load_dotenv()
+        # load_dotenv()
         # self.secrets = {"scenex_api_key": os.environ["SCENEX_API_KEY"]}
         # self.scenex_api_key = scenex_api_key
 
