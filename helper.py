@@ -221,6 +221,7 @@ class GhostTagger(AltTexter):
             updated_post = self.add_alts(post_id)
             if self._is_post_changed(original_post, updated_post):
                 self.update_post(post_id=post_id, post_data=updated_post)
+        log.info("All done!")
 
 
 # class WooCommerceTagger(AltTexter):
