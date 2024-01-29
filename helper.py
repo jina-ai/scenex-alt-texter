@@ -170,7 +170,7 @@ class GhostTagger(AltTexter):
             posts_data = response.json()
             post_ids = [post["id"] for post in posts_data["posts"]]
         else:
-            log.error(f"Failed to retrieve posts: {response.text}")
+            log.error("Failed to retrieve posts")
 
         return post_ids
 
