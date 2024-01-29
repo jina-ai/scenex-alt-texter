@@ -2,6 +2,25 @@
 
 This script automatically adds alt tags to all the images (including featured images) on your blog using [SceneXplain](https://scenex.jina.ai). Currently it supports Ghost, but other blogs/platforms can be added.
 
+When you run the script or Docker image it will:
+
+- Download each post from your blog
+- Check each image to see if it has alt text:
+    - If yes, skip that image
+    - If no, create an alt text using SceneXplain and write that to the post data
+- Check if the post has new alt texts:
+    * If yes, update the post
+    * If no, skip update
+
+## What images/blogs does it support?
+
+Currently the script supports Ghost blogs:
+
+- ✅ Featured images
+- ✅ Inline images (basically normal images)
+- ❌ Galleries (there seems to be no alt text field to even write)
+- ❌ Thumbnails generated from bookmarks, YouTube video embeds, etc
+
 ## Instructions
 
 First of all, clone this repo then enter its directory. Then:
