@@ -45,6 +45,17 @@ class AltTexter:
     def generate_alt_text(
         self, image_url: str, max_length: int = 125, max_tries: int = 3
     ):
+        """
+        Generate alt text for a given image.
+
+        Args:
+            image_url (str): URL of the image. Can be 'standard' URL or a datauri
+            max_length (int): Maximum length of the alt text. Defaults to 125, which is a recommended standard.
+            max_tries (int): Maximum attempts to generate image before giving up.
+
+        Returns:
+            alt_text (str): The alt text of the input image URL.
+        """
         if image_url:
             filename = image_url.split("/")[-1]
             data = {
@@ -79,6 +90,15 @@ class GhostTagger(AltTexter):
         self.scenex_url = scenex_url
 
     def _get_ghost_token(self, ghost_api_key: str):
+        """
+        Get a Ghost token from API key
+
+        Args:
+            ghost_api_key (str): Your Ghost Admin API key.
+
+        Returns:
+            token: Resulting Ghost token.
+        """
         api_id, api_secret = ghost_api_key.split(":")
 
         payload = {
@@ -96,7 +116,16 @@ class GhostTagger(AltTexter):
 
         return token
 
-    def _renew_headers(self, ghost_api_key: str):
+    def _renew_headers(self, ghost_api_key: str) -> dict:
+        """
+        Ghost tokens expire after a while. This function recreates the token and returns updated headers.
+
+        Args:
+            ghost_api_key (str): Your Ghost Admin API key.
+
+        Returns:
+            ghost_headers (dict): Updated Ghost headers.
+        """
         ghost_headers = {
             "Authorization": f"Ghost {self._get_ghost_token(ghost_api_key)}",
             "Content-Type": "application/json",
@@ -109,7 +138,18 @@ class GhostTagger(AltTexter):
         status: str = "published",
         limit: int = 10_000,
         order: str = "published_at desc",
-    ):
+    ) -> list:
+        """
+        Get IDs of all posts in Ghost blog.
+
+        Args:
+            status (str): published/scheduled/draft.
+            limit (int): maximum number of post ids to retrieve.
+            order (str): ordering method to use, followed by 'asc' (ascending) or 'desc' (descending).
+
+        Returns:
+            post_ids (list): a list of strings, where each string is a separate post.id.
+        """
         ghost_headers = self._renew_headers(self.ghost_api_key)
 
         params = {
@@ -132,7 +172,16 @@ class GhostTagger(AltTexter):
 
         return post_ids
 
-    def _get_post(self, post_id: str):
+    def _get_post(self, post_id: str) -> dict:
+        """
+        Get an individual Ghost blog post.
+
+        Args:
+            post_id (str): Post ID of the post you wish to retrieve.
+
+        Returns:
+            post (dict): The post with the post ID you requested.
+        """
         url = f"{self.ghost_url}/ghost/api/admin/posts/{post_id}"
 
         ghost_headers = self._renew_headers(self.ghost_api_key)
@@ -146,7 +195,8 @@ class GhostTagger(AltTexter):
             return post
         else:
             print(response.json())
-            return f"Error: {response.status_code}"
+            return response.json()
+            # return f"Error: {response.status_code}"
 
     def _get_posts(
         self,
@@ -154,7 +204,19 @@ class GhostTagger(AltTexter):
         status: str = "published",
         limit: int = 10_000,
         order: str = "published_at desc",
-    ):
+    ) -> list:
+        """
+        Get all posts in Ghost blog.
+
+        Args:
+            post_ids (list): list of post IDs to retrieve. If unset, retrieve 10,000.
+            status (str): published/scheduled/draft.
+            limit (int): maximum number of post ids to retrieve.
+            order (str): ordering method to use, followed by 'asc' (ascending) or 'desc' (descending).
+
+        Returns:
+            post_ids (list): a list of strings, where each string is a separate post.id.
+        """
         if not post_ids:
             post_ids = self._get_post_ids(status, limit, order)
 
@@ -162,7 +224,17 @@ class GhostTagger(AltTexter):
 
         return posts
 
-    def update_post(self, post_id, post_data):
+    def update_post(self, post_id, post_data) -> dict:
+        """
+        Update an individual Ghost blog post.
+
+        Args:
+            post_id (str): Post ID of the post you wish to update.
+            post_data (dict): The updated post content you wish to write.
+
+        Returns:
+            response.json(): The updated post
+        """
         url = f"{self.ghost_url}ghost/api/admin/posts/{post_id}/"
         data = {"posts": [post_data]}
 
@@ -172,7 +244,17 @@ class GhostTagger(AltTexter):
 
         return response.json()
 
-    def add_alts(self, post_id, max_tries=3):
+    def add_alts(self, post_id, max_tries=3) -> dict:
+        """
+        Add alt texts for all images in an individual Ghost post.
+
+        Args:
+            post_id (str): Post ID of the post you wish to add alts for.
+            max_tries (int): How many times to try generating an alt text before giving up.
+
+        Returns:
+            post (dict): post (based on post_id arg) updated with alt texts.
+        """
         post = self._get_post(post_id)
         log.info(f"Processing {post['title']}")
 
@@ -190,7 +272,10 @@ class GhostTagger(AltTexter):
 
         return post
 
-    def add_alt_text_recursive(self, rows):
+    def add_alt_text_recursive(self, rows) -> None:
+        """
+        Recurse through all nested structures in an individual Ghost blog post and add alt texts.
+        """
         for row in rows:
             if row.get("type") == "image":
                 if "alt" not in row:  # older posts don't even have the alt field
@@ -203,7 +288,18 @@ class GhostTagger(AltTexter):
             if "children" in row and isinstance(row["children"], list):
                 self.add_alt_text_recursive(row["children"])
 
-    def _is_post_changed(self, original_post, new_post):
+    def _is_post_changed(self, original_post, new_post) -> bool:
+        """
+        Check if post content has been updated. Checks post content and featured image.
+
+        Args:
+            original_post (dict): Original Ghost blog post.
+            new_post (dict): Updated version of Ghost blog post, relative to original.
+
+        Returns:
+            True if original_post and new_post are different.
+            False if original_post and new_post are the same.
+        """
         if new_post["lexical"]:
             if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
                 return True
@@ -214,7 +310,10 @@ class GhostTagger(AltTexter):
 
         return False
 
-    def update_all(self):
+    def update_all(self) -> None:
+        """
+        Create alt texts for all blog posts and write to Ghost.
+        """
         post_ids = self._get_post_ids()
         for post_id in post_ids:
             original_post = self._get_post(post_id)
