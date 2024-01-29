@@ -211,7 +211,7 @@ class GhostTagger(AltTexter):
         Get all posts in Ghost blog.
 
         Args:
-            post_ids (list): list of post IDs to retrieve. If unset, retrieve 10,000.
+            post_ids (list): list of post IDs to retrieve. If unset, retrieve 10,000 posts based on `order`.
             status (str): published/scheduled/draft.
             limit (int): maximum number of post ids to retrieve.
             order (str): ordering method to use, followed by 'asc' (ascending) or 'desc' (descending).
