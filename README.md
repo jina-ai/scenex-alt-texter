@@ -31,7 +31,7 @@ You'll need to set your environment variables in the Docker command then run it:
 
 ```
 docker build -t alt-texter .
-docker run -d --name myapp-container -e GHOST_API_KEY=your_ghost_api_key -e GHOST_BLOG_URL=your_ghost_blog_url -e SCENEX_URL=your_scenex_url myapp
+docker run -d --name alt-texter-container -e GHOST_API_KEY=your_ghost_api_key -e GHOST_BLOG_URL=your_ghost_blog_url -e SCENEX_URL=your_scenex_url alt-texter
 ```
 
 ### Bare metal
