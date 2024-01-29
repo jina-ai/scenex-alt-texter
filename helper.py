@@ -1,195 +1,240 @@
 import json
+import logging
 import os
 import time
 
 import jwt
 import requests
-import yaml
-from dotenv import load_dotenv
 from rich.console import Console
+from rich.logging import RichHandler
 
-# load config
-with open("config.yml") as file:
-    config = yaml.safe_load(file)
-
-max_alt_length = config["max_alt_length"]
-ghost_url = config["ghost_url"]
-scenex_url = config["scenex_url"]
-
-# load secrets
-load_dotenv()
-ghost_api_key = os.environ["GHOST_API_KEY"]
-scenex_api_key = os.environ["SCENEX_API_KEY"]
+if os.path.isfile(".env"):
+    from dotenv import load_dotenv
 
 console = Console(tab_size=2)
-print = console.print
+
+# set up logging
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level="INFO", format=FORMAT, datefmt="[%X]", handlers=[RichHandler()]
+)
+
+log = logging.getLogger("rich")
 
 
-def get_ghost_token(api_key=ghost_api_key):
-    api_id, api_secret = api_key.split(":")
+class AltTexter:
+    def __init__(self, url: str, scenex_api_key: str):
+        load_dotenv()
+        # self.secrets = {"scenex_api_key": os.environ["SCENEX_API_KEY"]}
+        # self.scenex_api_key = scenex_api_key
 
-    payload = {"iat": int(time.time()), "exp": int(time.time()) + 300, "aud": "/admin/"}
+        # self.config = self.load_config("config.yml")
 
-    token = jwt.encode(
-        payload, bytes.fromhex(api_secret), algorithm="HS256", headers={"kid": api_id}
-    )
-
-    return token
-
-
-ghost_token = get_ghost_token()
-ghost_headers = {
-    "Authorization": f"Ghost {ghost_token}",
-    "Content-Type": "application/json",
-}
-
-
-def get_post_ids(status="published", limit=10_000, order="published_at desc"):
-    # update token
-    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
-
-    params = {
-        "filter": f"status:{status}",
-        "limit": limit,
-        "order": order,
-    }
-
-    response = requests.get(
-        f"{ghost_url}/ghost/api/admin/posts/", headers=ghost_headers, params=params
-    )
-
-    if response.status_code == 200:
-        posts_data = response.json()
-        post_ids = [post["id"] for post in posts_data["posts"]]
-    else:
-        print(f"Failed to retrieve posts: {response.text}")
-
-    return post_ids
-
-
-def get_post(post_id):
-    url = f"{ghost_url}/ghost/api/admin/posts/{post_id}"
-
-    # update token
-    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
-
-    response = requests.get(url, headers=ghost_headers, params={"formats": "lexical"})
-    if response.status_code == 200:
-        post_data = response.json()
-        post = post_data["posts"][0]
-        return post
-    else:
-        print(response.json())
-        return f"Error: {response.status_code}"
-
-
-def create_alt_text(image_url, max_length=max_alt_length, max_tries=3):
-    # sometimes image_url is None, so we need to handle that
-    if image_url:
-        filename = image_url.split("/")[-1]
-        data = {
-            "data": [{"task_id": "alt_text", "languages": ["en"], "image": image_url}]
-        }
-
-        scenex_headers = {
+        self.scenex_headers = {
             "x-api-key": f"token {scenex_api_key}",
             "content-type": "application/json",
         }
+        self.url = url
 
-        # implement max tries since sometimes SX has issues
-        alt_text = None
-        alt_text_tries = 0
+    # def load_config(self, config_file):
+    # with open(config_file) as file:
+    # config = yaml.safe_load(file)
 
-        while (not alt_text) and (alt_text_tries < max_tries):
-            console.print(
-                f"\t- Sending {filename} to [bright_magenta]SceneXplain[/bright_magenta]"
-            )
-            response = requests.post(
-                scenex_url, headers=scenex_headers, json=data
-            ).json()
-            # print(response)
-            alt_text = response["result"][0]["text"][:max_length]
+    # return config
 
-        return alt_text
-    else:
-        return None
+    def generate_alt_text(
+        self, image_url: str, max_length: int = 125, max_tries: int = 3
+    ):
+        if image_url:
+            filename = image_url.split("/")[-1]
+            data = {
+                "data": [
+                    {"task_id": "alt_text", "languages": ["en"], "image": image_url}
+                ]
+            }
 
+            # implement max tries since sometimes SX has issues
+            alt_text = None
+            alt_text_tries = 0
 
-def is_post_changed(original_post, new_post):
-    if new_post["lexical"]:
-        if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
-            return True
+            while (not alt_text) and (alt_text_tries < max_tries):
+                log.info(f"Sending {filename} to SceneXplain")
+                response = requests.post(
+                    self.scenex_url, headers=self.scenex_headers, json=data
+                ).json()
+                alt_text = response["result"][0]["text"][:max_length]
 
-    if new_post["feature_image_alt"]:
-        if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
-            return True
-
-    return False
-
-
-def update_post(post_id, post_data):
-    url = f"{ghost_url}ghost/api/admin/posts/{post_id}/"
-    data = {"posts": [post_data]}
-
-    # keeps whining about jwt token expired, so let's recreate before we send the data
-    ghost_headers["Authorization"] = f"Ghost {get_ghost_token()}"
-    console.print("\t- Sending updated post to [cyan]Ghost[/cyan]")
-    response = requests.put(url, headers=ghost_headers, json=data)
-
-    return response.json()
+            return alt_text
+        else:
+            return None
 
 
-def run_test():
-    # get dummy post
-    post_id = "65ae57f88da8040001e16ec5"
+class GhostTagger(AltTexter):
+    def __init__(
+        self, url: str, ghost_api_key: str, scenex_api_key: str, scenex_url: str
+    ):
+        super().__init__(url, scenex_api_key)
+        self.ghost_api_key = ghost_api_key
+        self.ghost_url = url
+        self.scenex_url = scenex_url
 
-    original_post = get_post(post_id)
-    updated_post_data = add_alts(post_id)
+    def _get_ghost_token(self, ghost_api_key: str):
+        api_id, api_secret = ghost_api_key.split(":")
 
-    if is_post_changed(original_post, updated_post_data):
-        response = update_post(post_id, updated_post_data)
+        payload = {
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 300,
+            "aud": "/admin/",
+        }
 
-        print(response)
-    else:
-        print(f"\t- No change needed for [blue]{original_post['title']}[/blue]")
+        token = jwt.encode(
+            payload,
+            bytes.fromhex(api_secret),
+            algorithm="HS256",
+            headers={"kid": api_id},
+        )
+
+        return token
+
+    def _renew_headers(self, ghost_api_key: str):
+        ghost_headers = {
+            "Authorization": f"Ghost {self._get_ghost_token(ghost_api_key)}",
+            "Content-Type": "application/json",
+        }
+
+        return ghost_headers
+
+    def _get_post_ids(
+        self,
+        status: str = "published",
+        limit: int = 10_000,
+        order: str = "published_at desc",
+    ):
+        ghost_headers = self._renew_headers(self.ghost_api_key)
+
+        params = {
+            "filter": f"status:{status}",
+            "limit": limit,
+            "order": order,
+        }
+
+        response = requests.get(
+            f"{self.ghost_url}/ghost/api/admin/posts/",
+            headers=ghost_headers,
+            params=params,
+        )
+
+        if response.status_code == 200:
+            posts_data = response.json()
+            post_ids = [post["id"] for post in posts_data["posts"]]
+        else:
+            print(f"Failed to retrieve posts: {response.text}")
+
+        return post_ids
+
+    def _get_post(self, post_id: str):
+        url = f"{self.ghost_url}/ghost/api/admin/posts/{post_id}"
+
+        ghost_headers = self._renew_headers(self.ghost_api_key)
+        response = requests.get(
+            url, headers=ghost_headers, params={"formats": "lexical"}
+        )
+
+        if response.status_code == 200:
+            post_data = response.json()
+            post = post_data["posts"][0]
+            return post
+        else:
+            print(response.json())
+            return f"Error: {response.status_code}"
+
+    def _get_posts(
+        self,
+        post_ids=[],
+        status: str = "published",
+        limit: int = 10_000,
+        order: str = "published_at desc",
+    ):
+        if not post_ids:
+            post_ids = self._get_post_ids(status, limit, order)
+
+        posts = [self._get_post(post_id) for post_id in post_ids]
+
+        return posts
+
+    def update_post(self, post_id, post_data):
+        url = f"{self.ghost_url}ghost/api/admin/posts/{post_id}/"
+        data = {"posts": [post_data]}
+
+        ghost_headers = self._renew_headers(self.ghost_api_key)
+        log.info("Sending updated post to Ghost")
+        response = requests.put(url, headers=ghost_headers, json=data)
+
+        return response.json()
+
+    def add_alts(self, post_id, max_tries=3):
+        post = self._get_post(post_id)
+        log.info(f"Processing {post['title']}")
+
+        # Process featured image
+        if not post["feature_image_alt"]:
+            alt_text = self.generate_alt_text(post["feature_image"])
+            if alt_text:
+                post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
+
+        # Process post body
+        if post["lexical"]:
+            post["lexical"] = json.loads(post["lexical"])
+            self.add_alt_text_recursive(post["lexical"]["root"]["children"])
+            post["lexical"] = json.dumps(post["lexical"])
+
+        return post
+
+    def add_alt_text_recursive(self, rows):
+        for row in rows:
+            if row.get("type") == "image":
+                if "alt" not in row:  # older posts don't even have the alt field
+                    row["alt"] = None
+                if not row["alt"]:
+                    alt_text = self.generate_alt_text(row["src"])
+                    row["alt"] = alt_text
+
+            # Recursively process nested rows
+            if "children" in row and isinstance(row["children"], list):
+                self.add_alt_text_recursive(row["children"])
+
+    def _is_post_changed(self, original_post, new_post):
+        if new_post["lexical"]:
+            if json.loads(original_post["lexical"]) != json.loads(new_post["lexical"]):
+                return True
+
+        if new_post["feature_image_alt"]:
+            if original_post["feature_image_alt"] != new_post["feature_image_alt"]:
+                return True
+
+        return False
+
+    def update_all(self):
+        post_ids = self._get_post_ids()
+        for post_id in post_ids:
+            original_post = self._get_post(post_id)
+            updated_post = self.add_alts(post_id)
+            if self._is_post_changed(original_post, updated_post):
+                self.update_post(post_id=post_id, post_data=updated_post)
 
 
-def post_to_json(post_id):
-    post = get_post(post_id)
-    lexical = json.loads(post["lexical"])
+# class WooCommerceTagger(AltTexter):
+# def __init__(self, url):
+# super().__init__(url)
 
-    with open(f"{post['title']}.json", "w") as file:
-        file.write(json.dumps(lexical))
+# def get_product_ids(self):
+# # Your code to get product IDs
+# pass
 
+# def get_product(self):
+# # Your code to get a single product
+# pass
 
-def add_alts(post_id, max_tries=3):
-    post = get_post(post_id)
-    print(f"- Processing [blue]{post['title']}[/blue]")
-
-    # Process featured image
-    if not post["feature_image_alt"]:
-        alt_text = create_alt_text(post["feature_image"])
-        if alt_text:
-            post["feature_image_alt"] = alt_text[:125]  # Ghost has hard limit here
-
-    # Process post body
-    if post["lexical"]:
-        post["lexical"] = json.loads(post["lexical"])
-        add_alt_text_recursive(post["lexical"]["root"]["children"])
-        post["lexical"] = json.dumps(post["lexical"])
-
-    return post
-
-
-def add_alt_text_recursive(rows):
-    for row in rows:
-        if row.get("type") == "image":
-            if "alt" not in row:  # older posts don't even have the alt field
-                row["alt"] = None
-            if not row["alt"]:
-                alt_text = create_alt_text(row["src"])
-                row["alt"] = alt_text
-
-        # Recursively process nested rows
-        if "children" in row and isinstance(row["children"], list):
-            add_alt_text_recursive(row["children"])
+# def update_product(self):
+# # Your code to update a product
+# pass
