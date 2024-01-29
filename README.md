@@ -12,6 +12,11 @@ When you run the script or Docker image it will:
     * If yes, update the post
     * If no, skip update
 
+## You will need:
+
+- A [SceneXplain](https://scenex.jina.ai) account and [API key](https://scenex.jina.ai/api).
+- Your Ghost **Admin** API key (not Content API key)
+
 ## What images/blogs does it support?
 
 Currently the script supports Ghost blogs:
@@ -31,7 +36,7 @@ You'll need to set your environment variables in the Docker command then run it:
 
 ```
 docker build -t alt-texter .
-docker run -d --name alt-texter-container -e GHOST_API_KEY=your_ghost_api_key -e GHOST_BLOG_URL=your_ghost_blog_url -e SCENEX_URL=your_scenex_url alt-texter
+docker run -d --name alt-texter-container -e GHOST_API_KEY=your_ghost_admin_api_key -e GHOST_BLOG_URL=your_ghost_blog_url -e SCENEX_URL=your_scenex_url alt-texter
 ```
 
 ### Bare metal
