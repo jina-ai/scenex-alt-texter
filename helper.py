@@ -2,10 +2,12 @@ import json
 import logging
 # import os
 import time
+from difflib import unified_diff
 
 import jwt
 import requests
 from bs4 import BeautifulSoup
+from lxml.html import diff, fromstring, tostring
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -329,22 +331,6 @@ class GhostTagger(AltTexter):
         log.info("All done!")
 
 
-# class WooCommerceTagger(AltTexter):
-# def __init__(self, url):
-# super().__init__(url)
-
-# def get_product_ids(self):
-# # Your code to get product IDs
-# pass
-
-# def get_product(self):
-# # Your code to get a single product
-# pass
-
-
-# def update_product(self):
-# # Your code to update a product
-# pass
 class WordPressTagger(AltTexter):
     def __init__(self, url: str, scenex_api_key: str, scenex_url: str):
         super().__init__(url, scenex_api_key)
@@ -415,16 +401,20 @@ class WordPressTagger(AltTexter):
         pass
 
     def _is_item_changed(self, original_item, new_item):
-        original_content = original_item["content"]
-        new_content = new_item["content"]
+        original_html = str(original_item["content"]["rendered"])
+        new_html = str(new_item["content"]["rendered"])
 
         # function still needs work
-        output = HTMLHelper._is_changed(original_content, new_content)
+        output = HTMLHelper._is_html_changed(self, original_html, new_html)
 
         return output
 
 
 class HTMLHelper(AltTexter):
+    from difflib import unified_diff
+
+    from lxml.html import fromstring, tostring
+
     def __init__(self):
         super().__init__()
 
@@ -438,32 +428,45 @@ class HTMLHelper(AltTexter):
 
         return str(soup)
 
-    def _is_changed(original_item, new_item) -> bool:
+    def _get_html_with_alt(self, doc):
+        html = tostring(doc, pretty_print=True).decode()
+        for element in doc.iter():
+            if "alt" in element.attrib:
+                alt_text = f" [alt: {element.attrib['alt']}]"
+                html = html.replace(
+                    tostring(element, with_tail=False).decode(),
+                    tostring(element, with_tail=False).decode() + alt_text,
+                )
+        return html
+
+    def _is_html_changed(self, original_html, new_html) -> bool:
         """
-        Check if HTML has been updated.
+        Check if HTML has been changed.
 
         Args:
-            original_item (dict): Original HTML.
-            new_item (dict): Updated HTML.
+            original_item (str): Original HTML.
+            new_item (str): Updated HTML.
 
         Returns:
             True if original_item and new_item are different.
             False if original_item and new_item are the same.
         """
-        console.print(original_item["content"])
-        console.print(new_item["content"])
+        original_doc = fromstring(original_html)
+        new_doc = fromstring(new_html)
 
-        # need to normalize this html somehow
-        # actually use bs4 to check if any alt texts have been changed?
-        original_content = original_item["content"]
-        new_content = new_item["content"]
+        original_html_with_alt = HTMLHelper._get_html_with_alt(self, original_doc)
+        new_html_with_alt = HTMLHelper._get_html_with_alt(self, new_doc)
 
-        if original_item["content"] != new_item["content"]:
-            return True
+        console.print(original_html_with_alt)
+        console.print(new_html_with_alt)
 
-        # fix featured image alt later
-        # if new_item["feature_image_alt"]:
-        # if original_item["feature_image_alt"] != new_item["feature_image_alt"]:
-        # return True
-
-        return False
+        diff_lines = list(
+            unified_diff(
+                original_html_with_alt.splitlines(),
+                new_html_with_alt.splitlines(),
+                lineterm="",
+                fromfile="original",
+                tofile="new",
+            )
+        )
+        return len(diff_lines) > 0
