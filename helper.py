@@ -41,7 +41,7 @@ class AltTexter:
         Returns:
             alt_text (str): The alt text of the input image URL.
         """
-        if image_url:
+        if self._validate_image(image_url):
             filename = image_url.split("/")[-1]
             data = {
                 "data": [
@@ -62,7 +62,26 @@ class AltTexter:
 
             return alt_text
         else:
-            return None
+            return
+
+    def _validate_image(image_url):
+        supported_formats = ["gif", "jpeg", "jpg", "png"]
+        if not image_url.startswith("datauri"):
+            filename = image_url.split("/")[-1]
+            file_ext = filename.split(".")[-1].lower()
+            if file_ext not in supported_formats:
+                log.warn(f"{filename} is not in supported format.")
+                return False
+
+            response = requests.get(image_url)
+            status_code = response.status_code
+            if status_code != 200:
+                log.warn(
+                    f"{filename} could not be downloaded. Status code {status_code}"
+                )
+                return False
+
+        return True
 
 
 class GhostTagger(AltTexter):
@@ -141,6 +160,7 @@ class GhostTagger(AltTexter):
             "filter": f"status:{status}",
             "limit": limit,
             "order": order,
+            "fields": "id",
         }
 
         response = requests.get(
@@ -149,6 +169,7 @@ class GhostTagger(AltTexter):
             params=params,
         )
 
+        log.info("Getting Ghost post IDs")
         if response.status_code == 200:
             posts_data = response.json()
             post_ids = [post["id"] for post in posts_data["posts"]]
@@ -385,15 +406,6 @@ class WordPressTagger(AltTexter):
         html = item["content"]["rendered"]
 
         new_html = HTMLHelper._process_html(self, html=html)
-        # soup = BeautifulSoup(html, "html.parser")
-
-        # img_tags = soup.find_all("img")
-
-        # for img in img_tags:
-        # img["alt"] = self.generate_alt_text(img["src"])
-
-        # console.print(soup)
-
         item["content"]["rendered"] = new_html
 
         return item
@@ -410,8 +422,6 @@ class WordPressTagger(AltTexter):
         output = HTMLHelper._is_changed(original_content, new_content)
 
         return output
-
-        # feed through html checker
 
 
 class HTMLHelper(AltTexter):
