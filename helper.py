@@ -5,6 +5,7 @@ import time
 
 import jwt
 import requests
+from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -56,7 +57,9 @@ class AltTexter:
         Returns:
             alt_text (str): The alt text of the input image URL.
         """
-        if image_url:
+        # check URL resolves
+        image_status = requests.get(image_url).status_code
+        if image_status == 200:
             filename = image_url.split("/")[-1]
             data = {
                 "data": [
@@ -72,12 +75,27 @@ class AltTexter:
                 log.info(f"Sending {filename} to SceneXplain")
                 response = requests.post(
                     self.scenex_url, headers=self.scenex_headers, json=data
-                ).json()
-                alt_text = response["result"][0]["text"][:max_length]
+                )
+                if response.status_code == 200:
+                    response = response.json()
+                    alt_text = response["result"][0]["text"][:max_length]
 
             return alt_text
         else:
-            return None
+            log.warning(
+                f"Image {image_url} can't be downloaded. Status code: {image_status}. Setting empty alt text"
+            )
+            return
+
+    # def _process_html(self, html):
+    # soup = BeautifulSoup(html, "html.parser")
+
+    # img_tags = soup.find_all("img")
+
+    # for img in img_tags:
+    # img["alt"] = self.generate_alt_text(img["src"])
+
+    # return str(soup)
 
 
 class GhostTagger(AltTexter):
@@ -325,6 +343,96 @@ class GhostTagger(AltTexter):
         log.info("All done!")
 
 
+class WordPressTagger(AltTexter):
+    def __init__(self, url: str, scenex_api_key: str, scenex_url: str):
+        super().__init__(url, scenex_api_key)
+        self.full_url = f"{self.url}/wp-json/wp/v2/"
+        self.scenex_url = scenex_url
+
+    def _get_items(
+        self, item_types: str = ["posts"], limit: int = 100, status: str = "publish"
+    ) -> list:
+        """
+        Get posts or pages
+        """
+        items_per_page = 100
+        all_items = []
+        for item_type in item_types:
+            url = f"{self.url}/wp-json/wp/v2/{item_type}"
+
+            page = 1
+            log.info(f"Getting WordPress {item_type}")
+            while len(all_items) < limit:
+                params = {
+                    "status": status,  # Can be 'publish', 'draft', etc.
+                    "per_page": items_per_page,
+                    "page": page,
+                }
+                response = requests.get(url, params=params)
+                if response.status_code == 200:
+                    items = response.json()
+                    if not items:
+                        break  # No more posts available
+                    all_items.extend(items)
+                    if len(items) < items_per_page:
+                        break  # This is the last page of items
+                    page += 1
+                else:
+                    log.error(
+                        f"Failed to retrieve WordPress {item_type}, Status Code: {response.status_code}"
+                    )
+                    console.print(response.json())
+                    break
+
+        return all_items[:limit]
+
+    def get_item(self, item_type: str, item_id: str):
+        item_url = f"{self.full_url}{item_type}/{item_id}"
+        response = requests.get(item_url)
+        if response.status_code == 200:
+            item = response.json()
+            return item
+        else:
+            logging.info(
+                f"Failed to retrieve {item_type} with ID {item_id}, Status Code: {response.status_code}"
+            )
+
+    def add_alts(self, item_type, item_id):
+        item = self.get_item(item_type, item_id)
+        log.info(f"Processing {item['title']['rendered']}")
+
+        html = item["content"]["rendered"]
+
+        new_html = HTMLHelper._process_html(self, html=html)
+        # soup = BeautifulSoup(html, "html.parser")
+
+        # img_tags = soup.find_all("img")
+
+        # for img in img_tags:
+        # img["alt"] = self.generate_alt_text(img["src"])
+
+        # console.print(soup)
+
+        item["content"]["rendered"] = new_html
+
+        return item
+
+    def update_item(self, item):
+        # Your code to update a page or post
+        pass
+
+    def _is_item_changed(self, original_item, new_item):
+        original_content = original_item["content"]
+        new_content = new_item["content"]
+
+        # function still needs work
+        output = HTMLHelper._is_changed(original_content, new_content)
+
+        return output
+
+        # feed through html checker
+
+
 # class WooCommerceTagger(AltTexter):
 # def __init__(self, url):
 # super().__init__(url)
@@ -340,3 +448,48 @@ class GhostTagger(AltTexter):
 # def update_product(self):
 # # Your code to update a product
 # pass
+
+
+class HTMLHelper(AltTexter):
+    def __init__(self):
+        super().__init__()
+
+    def _process_html(self, html):
+        soup = BeautifulSoup(html, "html.parser")
+
+        img_tags = soup.find_all("img")
+
+        for img in img_tags:
+            img["alt"] = self.generate_alt_text(img["src"])
+
+        return str(soup)
+
+    def _is_changed(original_item, new_item) -> bool:
+        """
+        Check if content has been updated. Checks content and featured image.
+
+        Args:
+            original_item (dict): Original Ghost blog post.
+            new_item (dict): Updated version of Ghost blog post, relative to original.
+
+        Returns:
+            True if original_item and new_item are different.
+            False if original_item and new_item are the same.
+        """
+        console.print(original_item["content"])
+        console.print(new_item["content"])
+
+        # need to normalize this html somehow
+        # actually use bs4 to check if any alt texts have been changed?
+        original_content = original_item["content"]
+        new_content = new_item["content"]
+
+        if original_item["content"] != new_item["content"]:
+            return True
+
+        # fix featured image alt later
+        # if new_item["feature_image_alt"]:
+        # if original_item["feature_image_alt"] != new_item["feature_image_alt"]:
+        # return True
+
+        return False

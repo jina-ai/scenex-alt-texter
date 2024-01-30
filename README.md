@@ -55,5 +55,16 @@ You'll need to set:
 
 #### Run the script
 
-4. `pip install -r requirements.txt`
-6. Run `python app.py`
+1. `pip install -r requirements.txt`
+2. Run `python app.py`
+
+## TODO
+
+### In progress
+
+- WordPress support
+
+### Future
+
+- WooCommerce support
+- Ghost pages support
