@@ -37,7 +37,7 @@ Fill in the environment variables (denoted by angle brackets) and run the code.
 docker run -d --name alt-texter \
 -e GHOST_API_KEY=<ghost-api-key> \
 -e SCENEX_API_KEY=<scenex-api-key> \
--e GHOST_BLOG_URL=<ghost-blog-url> \
+-e GHOST_BLOG_URL="<ghost-blog-url>" \
 jinaai/alt-texter:0.1
 ```
 
