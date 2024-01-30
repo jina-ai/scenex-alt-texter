@@ -1,6 +1,6 @@
-# Auto Alt Tagger
+# Alt Texter
 
-This script automatically adds alt tags to all the images (including featured images) on your blog using [SceneXplain](https://scenex.jina.ai). Currently it supports Ghost, but other blogs/platforms can be added.
+This script automatically adds alt tags to all the images (including featured images) on your blog using [SceneXplain](https://scenex.jina.ai). Currently it supports [Ghost](https://ghost.org/), but other blogs/platforms can be added.
 
 When you run the script or Docker image it will:
 
@@ -15,45 +15,41 @@ When you run the script or Docker image it will:
 ## You will need:
 
 - A [SceneXplain](https://scenex.jina.ai) account and [API key](https://scenex.jina.ai/api).
-- Your Ghost **Admin** API key (not Content API key)
+- Your Ghost [**Admin** API](https://ghost.org/docs/admin-api/) key (not Content API key)
 
 ## What images/blogs does it support?
 
-Currently the script supports Ghost blogs:
+Currently the script supports Ghost blog posts:
 
 - ✅ Featured images
 - ✅ Inline images (basically normal images)
 - ❌ Galleries (there seems to be no alt text field to even write)
 - ❌ Thumbnails generated from bookmarks, YouTube video embeds, etc
+- ❌ Ghost pages (not yet)
 
 ## Instructions
 
-First of all, clone this repo then enter its directory. Then:
-
 ### Docker
 
-You'll need to set your environment variables in the Docker command then run it:
+Fill in the environment variables (denoted by angle brackets) and run the code.
 
-```
-docker build -t alt-texter .
-docker run -d --name alt-texter-container -e GHOST_API_KEY=your_ghost_admin_api_key -e GHOST_BLOG_URL=your_ghost_blog_url -e SCENEX_URL=your_scenex_url alt-texter
+```shell
+docker run -d --name alt-texter \
+-e GHOST_API_KEY=<ghost-api-key> \
+-e SCENEX_API_KEY=<scenex-api-key> \
+-e GHOST_BLOG_URL=<ghost-blog-url> \
+jinaai/alt-texter:0.1
 ```
 
 ### Bare metal
 
-#### Get API keys
+1. Clone this repo then enter its directory.
+2. Run `pip install -r requirements.txt` to install requirements.
+2. Fill in the environment variables (denoted by angle brackets) and run the code.
 
-1. Sign up for an account on [SceneXplain](https://scenex.jina.ai) and create an [API key](https://scenex.jina.ai/api)
-2. Get your Ghost Admin API key
-
-#### Set environment variables
-
-You'll need to set:
-- `SCENEX_API_KEY`
-- `GHOST_API_KEY`
-- `GHOST_BLOG_URL`
-
-#### Run the script
-
-4. `pip install -r requirements.txt`
-6. Run `python app.py`
+```shell
+env GHOST_API_KEY=<ghost-api-key> \
+SCENEX_API_KEY=<scenex-api-key> \
+GHOST_BLOG_URL="<ghost-blog-url>" \
+python app.py
+```
