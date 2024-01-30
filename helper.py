@@ -58,9 +58,8 @@ class AltTexter:
             alt_text (str): The alt text of the input image URL.
         """
         # check URL resolves
-        image_status = requests.get(image_url).status_code
-        if image_status == 200:
-            filename = image_url.split("/")[-1]
+        filename = image_url.split("/")[-1]
+        if self._check_image(image_url):
             data = {
                 "data": [
                     {"task_id": "alt_text", "languages": ["en"], "image": image_url}
@@ -82,20 +81,28 @@ class AltTexter:
 
             return alt_text
         else:
-            log.warning(
-                f"Image {image_url} can't be downloaded. Status code: {image_status}. Setting empty alt text"
-            )
             return
 
-    # def _process_html(self, html):
-    # soup = BeautifulSoup(html, "html.parser")
+    def _check_image(url):
+        """
+        Check if image:
+            - is in supported format
+            - is retrievable
+        """
+        supported_formats = ["jpg", "jpeg", "png", "gif"]
+        if not url.startswith("datauri"):
+            filename = url.split("/")[-1]
+            file_ext = filename.split(".")[-1].lower()
+            if file_ext not in supported_formats:
+                log.warn(f"{filename} format not supported")
+                return False
 
-    # img_tags = soup.find_all("img")
+            status = requests.get(url).status_code
+            if status != 200:
+                log.warn(f"{filename} couldn't be downloaded. Status code: {status}")
+                return False
 
-    # for img in img_tags:
-    # img["alt"] = self.generate_alt_text(img["src"])
-
-    # return str(soup)
+        return True
 
 
 class GhostTagger(AltTexter):
@@ -334,12 +341,16 @@ class GhostTagger(AltTexter):
         """
         Create alt texts for all blog posts and write to Ghost.
         """
+        posts = []
         post_ids = self._get_post_ids()
+        print("Post IDs: ", len(post_ids))
         for post_id in post_ids:
             original_post = self._get_post(post_id)
+            posts.append(original_post)
             updated_post = self.add_alts(post_id)
             if self._is_post_changed(original_post, updated_post):
                 self.update_post(post_id=post_id, post_data=updated_post)
+        print("Posts: ", len(posts))
         log.info("All done!")
 
 
