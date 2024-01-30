@@ -64,7 +64,7 @@ class AltTexter:
         else:
             return
 
-    def _validate_image(image_url):
+    def _validate_image(self, image_url):
         supported_formats = ["gif", "jpeg", "jpg", "png"]
         if not image_url.startswith("datauri"):
             filename = image_url.split("/")[-1]
@@ -440,11 +440,11 @@ class HTMLHelper(AltTexter):
 
     def _is_changed(original_item, new_item) -> bool:
         """
-        Check if content has been updated. Checks content and featured image.
+        Check if HTML has been updated.
 
         Args:
-            original_item (dict): Original Ghost blog post.
-            new_item (dict): Updated version of Ghost blog post, relative to original.
+            original_item (dict): Original HTML.
+            new_item (dict): Updated HTML.
 
         Returns:
             True if original_item and new_item are different.
