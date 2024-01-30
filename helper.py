@@ -341,16 +341,13 @@ class GhostTagger(AltTexter):
         """
         Create alt texts for all blog posts and write to Ghost.
         """
-        posts = []
         post_ids = self._get_post_ids()
-        print("Post IDs: ", len(post_ids))
         for post_id in post_ids:
             original_post = self._get_post(post_id)
             posts.append(original_post)
             updated_post = self.add_alts(post_id)
             if self._is_post_changed(original_post, updated_post):
                 self.update_post(post_id=post_id, post_data=updated_post)
-        print("Posts: ", len(posts))
         log.info("All done!")
 
 
