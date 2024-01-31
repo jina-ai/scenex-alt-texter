@@ -8,6 +8,7 @@ import jwt
 import requests
 from bs4 import BeautifulSoup
 from lxml.html import diff, fromstring, tostring
+from requests.auth import HTTPBasicAuth
 from rich.console import Console
 from rich.logging import RichHandler
 
@@ -332,10 +333,19 @@ class GhostTagger(AltTexter):
 
 
 class WordPressTagger(AltTexter):
-    def __init__(self, url: str, scenex_api_key: str, scenex_url: str):
+    def __init__(
+        self,
+        url: str,
+        scenex_api_key: str,
+        scenex_url: str,
+        wordpress_username: str,
+        wordpress_password: str,
+    ):
         super().__init__(url, scenex_api_key)
         self.full_url = f"{self.url}/wp-json/wp/v2/"
         self.scenex_url = scenex_url
+        self.wordpress_username = wordpress_username
+        self.wordpress_password = wordpress_password
 
     def _get_items(
         self, item_types: str = ["posts"], limit: int = 100, status: str = "publish"
@@ -376,7 +386,10 @@ class WordPressTagger(AltTexter):
 
     def get_item(self, item_type: str, item_id: str):
         item_url = f"{self.full_url}{item_type}/{item_id}"
-        response = requests.get(item_url)
+        response = requests.get(
+            item_url,
+            auth=HTTPBasicAuth(self.wordpress_username, self.wordpress_password),
+        )
         if response.status_code == 200:
             item = response.json()
             return item
@@ -386,28 +399,70 @@ class WordPressTagger(AltTexter):
             )
 
     def add_alts(self, item_type, item_id):
+        """
+        Add alt texts for whole content item, including featured image
+        """
+        output = {}
         item = self.get_item(item_type, item_id)
         log.info(f"Processing {item['title']['rendered']}")
 
+        # process featured image
+        media_id = item.get("featured_media")
+        if media_id:
+            output["media_item"] = self.add_media_alt(media_id)
+
+            # console.print(media_item)
+            # output["media_item"] = media_item
+
+        # process html
         html = item["content"]["rendered"]
 
         new_html = HTMLHelper._process_html(self, html=html)
         item["content"]["rendered"] = new_html
 
-        return item
+        output["item"] = item
 
-    def update_item(self, item):
-        # Your code to update a page or post
-        pass
+        return output
+
+    def add_media_alt(self, item_id):
+        """
+        Add alt text for featured images
+        """
+        media_item = self.get_item(item_type="media", item_id=item_id)
+        if not media_item.get("alt_text"):
+            log.info(f"No alt text for media with ID {item_id}")
+            media_url = media_item["source_url"]
+            media_url = "https://cdn.vox-cdn.com/thumbor/xYSUaNbrtoz-HUrW5CIStGurgWk=/0x0:4987x3740/1200x800/filters:focal(0x0:4987x3740)/cdn.vox-cdn.com/uploads/chorus_image/image/45503430/453801468.0.0.jpg"
+
+            media_item["alt_text"] = self.generate_alt_text(media_url)
+        else:
+            log.info(f"{media_url} already has alt text. Skipping")
+
+        return media_item
+
+    def update_item(self, item_dict):
+        """
+        Update content item, including any featured image
+
+        Args:
+            - item_dict (dict): Dict of content items to update, each of which themselves are a dict. Typically includes `item` (the content item itself) and/or `media_item` (the content item's featured media)
+        """
+        if "media_item" in item_dict:
+            # update media
+            pass
+        if "item" in item_dict:
+            # update item
+            pass
 
     def _is_item_changed(self, original_item, new_item):
         original_html = str(original_item["content"]["rendered"])
         new_html = str(new_item["content"]["rendered"])
 
-        # function still needs work
-        output = HTMLHelper._is_html_changed(self, original_html, new_html)
+        html_changed = HTMLHelper._is_html_changed(self, original_html, new_html)
 
-        return output
+        # still need to compare featured image alt
+
+        return html_changed
 
 
 class HTMLHelper(AltTexter):
@@ -424,7 +479,8 @@ class HTMLHelper(AltTexter):
         img_tags = soup.find_all("img")
 
         for img in img_tags:
-            img["alt"] = self.generate_alt_text(img["src"])
+            if not img["alt"]:
+                img["alt"] = self.generate_alt_text(img["src"])
 
         return str(soup)
 
