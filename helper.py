@@ -21,14 +21,17 @@ logging.basicConfig(
 )
 log = logging.getLogger("rich")
 
+SCENEX_URL = "https://api.scenex.jina.ai/v1/describe"
+
 
 class AltTexter:
-    def __init__(self, url: str, scenex_api_key: str):
+    def __init__(self, url: str, scenex_api_key: str, scenex_url: str = SCENEX_URL):
         self.scenex_headers = {
             "x-api-key": f"token {scenex_api_key}",
             "content-type": "application/json",
         }
         self.url = url
+        self.scenex_url = scenex_url
 
     def generate_alt_text(
         self, image_url: str, max_length: int = 125, max_tries: int = 3
@@ -89,9 +92,13 @@ class AltTexter:
 
 class GhostTagger(AltTexter):
     def __init__(
-        self, url: str, ghost_api_key: str, scenex_api_key: str, scenex_url: str
+        self,
+        url: str,
+        ghost_api_key: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
     ):
-        super().__init__(url, scenex_api_key)
+        super().__init__(url, scenex_api_key, scenex_url)
         self.ghost_api_key = ghost_api_key
         self.ghost_url = url
         self.scenex_url = scenex_url
@@ -319,11 +326,13 @@ class GhostTagger(AltTexter):
 
         return False
 
-    def update_all(self) -> None:
+    def update_all(self, post_ids: list = []) -> None:
         """
         Create alt texts for all blog posts and write to Ghost.
         """
-        post_ids = self._get_post_ids()
+        if not post_ids:
+            post_ids = self._get_post_ids()
+
         for post_id in post_ids:
             original_post = self._get_post(post_id)
             updated_post = self.add_alts(post_id)
@@ -335,37 +344,41 @@ class GhostTagger(AltTexter):
 class WordPressTagger(AltTexter):
     def __init__(
         self,
-        url: str,
-        scenex_api_key: str,
-        scenex_url: str,
+        wordpress_url: str,
         wordpress_username: str,
         wordpress_password: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
     ):
-        super().__init__(url, scenex_api_key)
+        super().__init__(wordpress_url, scenex_api_key, scenex_url)
         self.full_url = f"{self.url}/wp-json/wp/v2/"
         self.scenex_url = scenex_url
         self.wordpress_username = wordpress_username
         self.wordpress_password = wordpress_password
+        self.basic_types = ["post", "page"]  # basic content types, e.g. page, product
 
     def _get_items(
-        self, item_types: str = ["posts"], limit: int = 100, status: str = "publish"
+        self, content_types: str = ["posts"], limit: int = 100, status: str = "publish"
     ) -> list:
         """
         Get posts or pages
         """
         items_per_page = 100
         all_items = []
-        for item_type in item_types:
-            url = f"{self.url}/wp-json/wp/v2/{item_type}"
+        for content_type in content_types:
+            url = f"{self.url}/wp-json/wp/v2/{content_type}"
 
             page = 1
-            log.info(f"Getting WordPress {item_type}")
+            log.info(f"Getting WordPress {content_type}")
             while len(all_items) < limit:
                 params = {
-                    "status": status,  # Can be 'publish', 'draft', etc.
                     "per_page": items_per_page,
                     "page": page,
                 }
+
+                if content_type != "media":
+                    params["status"] = status
+
                 response = requests.get(url, params=params)
                 if response.status_code == 200:
                     items = response.json()
@@ -377,9 +390,8 @@ class WordPressTagger(AltTexter):
                     page += 1
                 else:
                     log.error(
-                        f"Failed to retrieve WordPress {item_type}, Status Code: {response.status_code}"
+                        f"Failed to retrieve WordPress {content_type}, Status Code: {response.status_code}"
                     )
-                    console.print(response.json())
                     break
 
         return all_items[:limit]
@@ -398,61 +410,78 @@ class WordPressTagger(AltTexter):
                 f"Failed to retrieve {item_type} with ID {item_id}, Status Code: {response.status_code}"
             )
 
-    def add_alts(self, item_type, item_id):
+    def add_alts(self, content_object):
         """
-        Add alt texts for whole content item, including featured image
+        Add alt texts for content item
         """
-        output = {}
-        item = self.get_item(item_type, item_id)
-        log.info(f"Processing {item['title']['rendered']}")
+        log.info(f"Processing {content_object['title']['rendered']}")
+        updated_object = {"id": content_object["id"], "type": content_object["type"]}
 
-        # process featured image
-        media_id = item.get("featured_media")
-        if media_id:
-            output["media_item"] = self.add_media_alt(media_id)
+        if content_object["type"] in self.basic_types:
+            html = content_object["content"]["rendered"]
 
-            # console.print(media_item)
-            # output["media_item"] = media_item
+            new_html = HTMLHelper._process_html(self, html=html)
+            # content_object["content"]["rendered"] = new_html
+            updated_object["content"] = new_html.strip()
 
-        # process html
-        html = item["content"]["rendered"]
+        elif content_object["type"] == "attachment":
+            media_url = content_object["source_url"]
+            media_url = "https://cdn.vox-cdn.com/thumbor/xYSUaNbrtoz-HUrW5CIStGurgWk=/0x0:4987x3740/1200x800/filters:focal(0x0:4987x3740)/cdn.vox-cdn.com/uploads/chorus_image/image/45503430/453801468.0.0.jpg"
+            updated_object["alt_text"] = self.generate_alt_text(media_url)
+            # updated_object = self.add_media_alt(content_object)
 
-        new_html = HTMLHelper._process_html(self, html=html)
-        item["content"]["rendered"] = new_html
+        return updated_object
 
-        output["item"] = item
-
-        return output
-
-    def add_media_alt(self, item_id):
+    def add_media_alt(self, content_object):
         """
         Add alt text for featured images
         """
-        media_item = self.get_item(item_type="media", item_id=item_id)
-        if not media_item.get("alt_text"):
-            log.info(f"No alt text for media with ID {item_id}")
-            media_url = media_item["source_url"]
-            media_url = "https://cdn.vox-cdn.com/thumbor/xYSUaNbrtoz-HUrW5CIStGurgWk=/0x0:4987x3740/1200x800/filters:focal(0x0:4987x3740)/cdn.vox-cdn.com/uploads/chorus_image/image/45503430/453801468.0.0.jpg"
+        media_url = content_object["source_url"]
+        if not content_object.get("alt_text"):
+            log.info(f"No alt text for media with ID {content_object['id']}")
 
-            media_item["alt_text"] = self.generate_alt_text(media_url)
+            # temporary testing url
+
+            content_object["alt_text"] = self.generate_alt_text(media_url)
         else:
             log.info(f"{media_url} already has alt text. Skipping")
 
-        return media_item
+        return content_object
 
-    def update_item(self, item_dict):
+    def update_item(self, content_object):
         """
-        Update content item, including any featured image
+        Send updated content to WordPress API
 
         Args:
-            - item_dict (dict): Dict of content items to update, each of which themselves are a dict. Typically includes `item` (the content item itself) and/or `media_item` (the content item's featured media)
+            - content_object (dict): dict of the content object to update
         """
-        if "media_item" in item_dict:
-            # update media
+        # console.print(content_object)
+
+        content_id = content_object["id"]
+        content_type = content_object["type"]
+
+        if content_type in self.basic_types:
+            content_string = content_type + "s"
+            new_content = {"content": content_object["content"]}
+        elif content_type == "attachment":
             pass
-        if "item" in item_dict:
-            # update item
-            pass
+            new_content = {"alt_text": content_object["alt_text"]}
+            content_string = "media"
+
+        url = f"{self.full_url}{content_string}/{content_id}"
+
+        # content_json = json.dumps(new_content)
+        # content_json = {"content": content_object["content"]}
+
+        log.info(f"Updating content item {content_id}")
+
+        update_response = requests.post(
+            url,
+            auth=HTTPBasicAuth(self.wordpress_username, self.wordpress_password),
+            json=new_content,
+        )
+
+        return update_response
 
     def _is_item_changed(self, original_item, new_item):
         original_html = str(original_item["content"]["rendered"])
@@ -481,6 +510,8 @@ class HTMLHelper(AltTexter):
         for img in img_tags:
             if not img["alt"]:
                 img["alt"] = self.generate_alt_text(img["src"])
+            else:
+                log.info(f"{img['src']} already has alt text. Skipping")
 
         return str(soup)
 
