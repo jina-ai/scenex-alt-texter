@@ -1,6 +1,11 @@
 # Alt Texter
 
-This script automatically adds alt tags to all the images (including featured images) on your blog using [SceneXplain](https://scenex.jina.ai). Currently it supports [Ghost](https://ghost.org/), but other blogs/platforms can be added.
+This script automatically adds alt tags to all the images (including featured images) on your blog using [SceneXplain](https://scenex.jina.ai). 
+
+## Which platforms does it support?
+
+- ✅ Ghost (posts only. If you need pages, let me know)
+- 🧪 WordPress (experimental): Really needs more testing, but initial tests work out.
 
 When you run the script or Docker image it will:
 
