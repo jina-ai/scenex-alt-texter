@@ -28,19 +28,27 @@ SCENEX_URL = "https://api.scenex.jina.ai/v1/describe"
 
 
 class AltTexter:
-    def __init__(self, url: str, scenex_api_key: str, scenex_url: str = SCENEX_URL):
+    def __init__(
+        self,
+        url: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
+        language: str = "en",
+    ):
         self.scenex_headers = {
             "x-api-key": f"token {scenex_api_key}",
             "content-type": "application/json",
         }
         self.url = url
         self.scenex_url = scenex_url
+        self.language = language
 
     def generate_alt_text(
         self,
         image_url: str,
         max_length: int = 125,
         max_tries: int = 3,
+        language: str = "en",
     ):
         """
         Generate alt text for a given image.
@@ -53,25 +61,37 @@ class AltTexter:
         Returns:
             alt_text (str): The alt text of the input image URL.
         """
-        if self._validate_image(image_url):
-            print(image_url)
-            filename = image_url.split("/")[-1]
-            data = {"data": [{"task_id": "alt_text", "image": image_url}]}
+        # if self._validate_image(image_url):
 
-            # implement max tries since sometimes SX has issues
-            alt_text = None
-            alt_text_tries = 0
+        filename = image_url.split("/")[-1]
+        data = {
+            "data": [
+                {
+                    "task_id": "alt_text",
+                    "image": image_url,
+                    "languages": [self.language],
+                }
+            ]
+        }
 
-            while (not alt_text) and (alt_text_tries < max_tries):
-                log.info(f"Sending {filename} to SceneXplain")
-                response = requests.post(
-                    url=self.scenex_url, headers=self.scenex_headers, json=data
-                )
-                alt_text = response.json()["result"][0]["text"][:max_length]
+        # implement max tries since sometimes SX has issues
+        alt_text = None
+        alt_text_tries = 0
 
-            return alt_text
-        else:
-            return
+        # try:
+        while (not alt_text) and (alt_text_tries < max_tries):
+            log.info(f"Sending {filename} to SceneXplain")
+            response = requests.post(
+                url=self.scenex_url, headers=self.scenex_headers, json=data
+            )
+            alt_text = response.json()["result"][0]["text"][:max_length]
+        # except Exception as e:
+        # # console.print(e)
+        # log.error(e)
+
+        return alt_text
+        # else:
+        # return
 
     def _validate_image(self, image_url: str):
         """
@@ -108,8 +128,9 @@ class GhostTagger(AltTexter):
         ghost_api_key: str,
         scenex_api_key: str,
         scenex_url: str = SCENEX_URL,
+        language: str = "en",
     ):
-        super().__init__(url, scenex_api_key, scenex_url)
+        super().__init__(url, scenex_api_key, scenex_url, language)
         self.ghost_api_key = ghost_api_key
         self.ghost_url = url
         self.scenex_url = scenex_url
@@ -360,8 +381,9 @@ class WordPressTagger(AltTexter):
         wordpress_password: str,
         scenex_api_key: str,
         scenex_url: str = SCENEX_URL,
+        language: str = "en",
     ):
-        super().__init__(wordpress_url, scenex_api_key, scenex_url)
+        super().__init__(wordpress_url, scenex_api_key, scenex_url, language)
         self.full_url = f"{self.url}/wp-json/wp/v2/"
         self.scenex_url = scenex_url
         self.wordpress_username = wordpress_username
@@ -607,7 +629,7 @@ class WooCommerceTagger(AltTexter):
             consumer_secret=woocommerce_consumer_secret,
             version="wc/v3",
         )
-        super().__init__(self, scenex_url, scenex_api_key)
+        super().__init__(self, scenex_url=scenex_url, scenex_api_key=scenex_api_key)
 
     def get_products(self):
         """
@@ -624,24 +646,57 @@ class WooCommerceTagger(AltTexter):
 
         Args:
             product: the product object
+
+        Return:
+            output: any fields that were updated
         """
+        output = {}
         if product.get("name"):
             log.info(f"Processing {product['name']}")
 
         # product gallery images
         if product.get("images"):
+            image_list = []
+            counter = 0  # count how many images we've processed. If above zero, put data in output
+            # output['images'] = []
+
             for image in product["images"]:
                 src = image["src"]
+                log.info(src)
 
                 if not image["alt"]:
                     image["alt"] = self.generate_alt_text(src)
+                    counter += 1
+                    # processed_image_list.append(image)
+
+                image_list.append(image)
+
+            if counter > 0:
+                output["images"] = image_list
+
+        output["id"] = product.get("id")
 
         # body images
-        if product.get("description"):
-            html = product["description"]
-            product["description"] = HTMLHelper._process_html(html)
+        # if product.get("description"):
+        # html = product["description"]
+        # product["description"] = HTMLHelper._process_html(HTMLHelper, html)
 
-        return product
+        return output
+
+    def update_product(self, product: dict):
+        """
+        Update WooCommerce product.
+
+        Args:
+            product (dict): dict where keys are names of fields to update and values are data.
+
+        Returns:
+            updated_product (dict): Product dict with all populated fields
+        """
+        url_string = f"products/{product['id']}"
+        updated_product = self.wcapi.put(url_string, product)
+
+        return updated_product
 
 
 class Debug:
