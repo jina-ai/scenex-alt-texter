@@ -1,5 +1,7 @@
+import base64
 import json
 import logging
+import tempfile
 # import os
 import time
 from difflib import unified_diff
@@ -11,6 +13,7 @@ from lxml.html import diff, fromstring, tostring
 from requests.auth import HTTPBasicAuth
 from rich.console import Console
 from rich.logging import RichHandler
+from woocommerce import API
 
 console = Console(tab_size=2)
 
@@ -25,16 +28,27 @@ SCENEX_URL = "https://api.scenex.jina.ai/v1/describe"
 
 
 class AltTexter:
-    def __init__(self, url: str, scenex_api_key: str, scenex_url: str = SCENEX_URL):
+    def __init__(
+        self,
+        url: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
+        language: str = "en",
+    ):
         self.scenex_headers = {
             "x-api-key": f"token {scenex_api_key}",
             "content-type": "application/json",
         }
         self.url = url
         self.scenex_url = scenex_url
+        self.language = language
 
     def generate_alt_text(
-        self, image_url: str, max_length: int = 125, max_tries: int = 3
+        self,
+        image_url: str,
+        max_length: int = 125,
+        max_tries: int = 3,
+        language: str = "en",
     ):
         """
         Generate alt text for a given image.
@@ -47,32 +61,49 @@ class AltTexter:
         Returns:
             alt_text (str): The alt text of the input image URL.
         """
-        if self._validate_image(image_url):
-            filename = image_url.split("/")[-1]
-            data = {
-                "data": [
-                    {"task_id": "alt_text", "languages": ["en"], "image": image_url}
-                ]
-            }
+        # if self._validate_image(image_url):
 
-            # implement max tries since sometimes SX has issues
-            alt_text = None
-            alt_text_tries = 0
+        filename = image_url.split("/")[-1]
+        data = {
+            "data": [
+                {
+                    "task_id": "alt_text",
+                    "image": image_url,
+                    "languages": [self.language],
+                }
+            ]
+        }
 
-            while (not alt_text) and (alt_text_tries < max_tries):
-                log.info(f"Sending {filename} to SceneXplain")
-                response = requests.post(
-                    self.scenex_url, headers=self.scenex_headers, json=data
-                ).json()
-                alt_text = response["result"][0]["text"][:max_length]
+        # implement max tries since sometimes SX has issues
+        alt_text = None
+        alt_text_tries = 0
 
-            return alt_text
-        else:
-            return
+        while (not alt_text) and (alt_text_tries < max_tries):
+            log.info(f"Sending {filename} to SceneXplain")
+            response = requests.post(
+                url=self.scenex_url, headers=self.scenex_headers, json=data
+            )
+            alt_text = response.json()["result"][0]["text"][:max_length]
+            alt_text_tries += 1
+        # except Exception as e:
+        # # console.print(e)
+        # log.error(e)
 
-    def _validate_image(self, image_url):
-        supported_formats = ["gif", "jpeg", "jpg", "png"]
-        if not image_url.startswith("datauri"):
+        return alt_text
+        # else:
+        # return
+
+    def _validate_image(self, image_url: str):
+        """
+        Validate image URL:
+            - Check file extension is supported.
+            - Check that URL resolves.
+
+        Args:
+            image_url (str): The URL of the image.
+        """
+        supported_formats = ["gif", "jpeg", "jpg", "png", "webp"]
+        if not image_url.startswith("data"):
             filename = image_url.split("/")[-1]
             file_ext = filename.split(".")[-1].lower()
             if file_ext not in supported_formats:
@@ -97,8 +128,9 @@ class GhostTagger(AltTexter):
         ghost_api_key: str,
         scenex_api_key: str,
         scenex_url: str = SCENEX_URL,
+        language: str = "en",
     ):
-        super().__init__(url, scenex_api_key, scenex_url)
+        super().__init__(url, scenex_api_key, scenex_url, language)
         self.ghost_api_key = ghost_api_key
         self.ghost_url = url
         self.scenex_url = scenex_url
@@ -349,8 +381,9 @@ class WordPressTagger(AltTexter):
         wordpress_password: str,
         scenex_api_key: str,
         scenex_url: str = SCENEX_URL,
+        language: str = "en",
     ):
-        super().__init__(wordpress_url, scenex_api_key, scenex_url)
+        super().__init__(wordpress_url, scenex_api_key, scenex_url, language)
         self.full_url = f"{self.url}/wp-json/wp/v2/"
         self.scenex_url = scenex_url
         self.wordpress_username = wordpress_username
@@ -397,6 +430,13 @@ class WordPressTagger(AltTexter):
         return all_items[:limit]
 
     def get_item(self, item_type: str, item_id: str):
+        """
+        Get a WordPress content object.
+
+        Args:
+            item_type (str): typically 'pages', 'posts', or 'media'.
+            item_id (str): object id.
+        """
         item_url = f"{self.full_url}{item_type}/{item_id}"
         response = requests.get(
             item_url,
@@ -406,13 +446,16 @@ class WordPressTagger(AltTexter):
             item = response.json()
             return item
         else:
-            logging.info(
+            logging.warn(
                 f"Failed to retrieve {item_type} with ID {item_id}, Status Code: {response.status_code}"
             )
 
     def add_alts(self, content_object):
         """
-        Add alt texts for content item
+        Add alt texts for content item.
+
+        Args:
+            content_object: WordPress object, like post, page, media
         """
         log.info(f"Processing {content_object['title']['rendered']}")
         updated_object = {"id": content_object["id"], "type": content_object["type"]}
@@ -426,27 +469,30 @@ class WordPressTagger(AltTexter):
 
         elif content_object["type"] == "attachment":
             media_url = content_object["source_url"]
-            media_url = "https://cdn.vox-cdn.com/thumbor/xYSUaNbrtoz-HUrW5CIStGurgWk=/0x0:4987x3740/1200x800/filters:focal(0x0:4987x3740)/cdn.vox-cdn.com/uploads/chorus_image/image/45503430/453801468.0.0.jpg"
+            # media_url = "https://cdn.vox-cdn.com/thumbor/xYSUaNbrtoz-HUrW5CIStGurgWk=/0x0:4987x3740/1200x800/filters:focal(0x0:4987x3740)/cdn.vox-cdn.com/uploads/chorus_image/image/45503430/453801468.0.0.jpg"
             updated_object["alt_text"] = self.generate_alt_text(media_url)
             # updated_object = self.add_media_alt(content_object)
 
         return updated_object
 
-    def add_media_alt(self, content_object):
-        """
-        Add alt text for featured images
-        """
-        media_url = content_object["source_url"]
-        if not content_object.get("alt_text"):
-            log.info(f"No alt text for media with ID {content_object['id']}")
+    # def add_media_alt(self, content_object):
+    # """
+    # Add alt text for featured images
 
-            # temporary testing url
+    # Args:
+    # content_object: WordPress object, like post, page, media
+    # """
+    # media_url = content_object["source_url"]
+    # if not content_object.get("alt_text"):
+    # log.info(f"No alt text for media with ID {content_object['id']}")
 
-            content_object["alt_text"] = self.generate_alt_text(media_url)
-        else:
-            log.info(f"{media_url} already has alt text. Skipping")
+    # # temporary testing url
 
-        return content_object
+    # content_object["alt_text"] = self.generate_alt_text(media_url)
+    # else:
+    # log.info(f"{media_url} already has alt text. Skipping")
+
+    # return content_object
 
     def update_item(self, content_object):
         """
@@ -502,7 +548,13 @@ class HTMLHelper(AltTexter):
     def __init__(self):
         super().__init__()
 
-    def _process_html(self, html):
+    def _process_html(self, html: str):
+        """
+        Find all images in HTML string, and add alt text if it doesn't exist.
+
+        Args:
+            html (str): HTML string
+        """
         soup = BeautifulSoup(html, "html.parser")
 
         img_tags = soup.find_all("img")
@@ -516,6 +568,9 @@ class HTMLHelper(AltTexter):
         return str(soup)
 
     def _get_html_with_alt(self, doc):
+        """
+        Extract HTML and keep alt texts and overall structure (i.e. parameter ordering, etc). Helps run a meaningful diff on multiple HTML strings
+        """
         html = tostring(doc, pretty_print=True).decode()
         for element in doc.iter():
             if "alt" in element.attrib:
@@ -557,3 +612,130 @@ class HTMLHelper(AltTexter):
             )
         )
         return len(diff_lines) > 0
+
+
+class WooCommerceTagger(AltTexter):
+    def __init__(
+        self,
+        url: str,
+        woocommerce_consumer_key: str,
+        woocommerce_consumer_secret: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
+    ):
+        self.wcapi = API(
+            url=url,
+            consumer_key=woocommerce_consumer_key,
+            consumer_secret=woocommerce_consumer_secret,
+            version="wc/v3",
+        )
+        super().__init__(self, scenex_url=scenex_url, scenex_api_key=scenex_api_key)
+
+    def get_products(self):
+        """
+        Get list of all WooCommerce products.
+        """
+        log.info("Getting WooCommerce products")
+        products = self.wcapi.get("products").json()
+
+        return products
+
+    def add_alts(self, product):
+        """
+        All alt images for product featured image and gallery images
+
+        Args:
+            product: the product object
+
+        Return:
+            output: any fields that were updated
+        """
+        output = {}
+        if product.get("name"):
+            log.info(f"Processing {product['name']}")
+
+        # product gallery images
+        if product.get("images"):
+            image_list = []
+            counter = 0  # count how many images we've processed. If above zero, put data in output
+            # output['images'] = []
+
+            for i, image in enumerate(product["images"], start=1):
+                src = image["src"]
+
+                if not image["alt"]:
+                    log.info(
+                        f"Sending image {i}/{len(product['images'])} to SceneXplain"
+                    )
+                    image["alt"] = self.generate_alt_text(src)
+                    counter += 1
+                    # processed_image_list.append(image)
+
+                image_list.append(image)
+
+            if counter > 0:
+                output["images"] = image_list
+
+        output["id"] = product.get("id")
+
+        # body images
+        # if product.get("description"):
+        # html = product["description"]
+        # product["description"] = HTMLHelper._process_html(HTMLHelper, html)
+
+        return output
+
+    def update_product(self, product: dict):
+        """
+        Update WooCommerce product.
+
+        Args:
+            product (dict): dict where keys are names of fields to update and values are data.
+
+        Returns:
+            updated_product (dict): Product dict with all populated fields
+        """
+        url_string = f"products/{product['id']}"
+        updated_product = self.wcapi.put(url_string, product)
+
+        return updated_product
+
+    def update_products(self, products: list = []):
+        if not products:
+            products = self.get_products()
+
+        for product in products:
+            updated_product = self.add_alts(product)
+            self.update_product(updated_product)
+
+        log.info("All done")
+
+
+class Debug:
+    def url_to_datauri(image_url, file_path="./temp"):
+        file_path = Debug.download_to_temp(image_url, file_path)
+        datauri = Debug.image_to_data_uri(file_path)
+
+        return datauri
+
+    def image_to_data_uri(file_path):
+        filename = file_path.split("/")[-1]
+        log.info(f"Converting {filename} to datauri")
+
+        with open(file_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
+            return f"data:image/png;base64,{encoded_image}"
+
+    def download_to_temp(image_url, directory="./temp"):
+        filename = image_url.split("/")[-1]
+        log.info(f"Downloading {filename}")
+
+        response = requests.get(image_url)
+        response.raise_for_status()
+
+        file_path = f"{directory}/{filename}"
+
+        with open(file_path, "wb") as file:
+            file.write(response.content)
+
+        return file_path
