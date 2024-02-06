@@ -7,7 +7,7 @@ GHOST_BLOG_URL = os.environ["GHOST_BLOG_URL"]
 SCENEX_API_KEY = os.environ["SCENEX_API_KEY"]
 SCENEX_URL = "https://api.scenex.jina.ai/v1/describe"
 
-post_ids = ["641c2fcdf4d50d003d590477"]
+# post_ids = ["641c2fcdf4d50d003d590477"]
 
 if __name__ == "__main__":
     alt_texter = GhostTagger(
@@ -17,4 +17,4 @@ if __name__ == "__main__":
         scenex_url=SCENEX_URL,
     )
 
-    alt_texter.update_all(post_ids=post_ids)
+    alt_texter.update_all()
