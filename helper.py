@@ -78,13 +78,13 @@ class AltTexter:
         alt_text = None
         alt_text_tries = 0
 
-        # try:
         while (not alt_text) and (alt_text_tries < max_tries):
             log.info(f"Sending {filename} to SceneXplain")
             response = requests.post(
                 url=self.scenex_url, headers=self.scenex_headers, json=data
             )
             alt_text = response.json()["result"][0]["text"][:max_length]
+            alt_text_tries += 1
         # except Exception as e:
         # # console.print(e)
         # log.error(e)
@@ -660,11 +660,13 @@ class WooCommerceTagger(AltTexter):
             counter = 0  # count how many images we've processed. If above zero, put data in output
             # output['images'] = []
 
-            for image in product["images"]:
+            for i, image in enumerate(product["images"], start=1):
                 src = image["src"]
-                log.info(src)
 
                 if not image["alt"]:
+                    log.info(
+                        f"Sending image {i}/{len(product['images'])} to SceneXplain"
+                    )
                     image["alt"] = self.generate_alt_text(src)
                     counter += 1
                     # processed_image_list.append(image)
@@ -697,6 +699,16 @@ class WooCommerceTagger(AltTexter):
         updated_product = self.wcapi.put(url_string, product)
 
         return updated_product
+
+    def update_products(self, products: list = []):
+        if not products:
+            products = self.get_products()
+
+        for product in products:
+            updated_product = self.add_alts(product)
+            self.update_product(updated_product)
+
+        log.info("All done")
 
 
 class Debug:
