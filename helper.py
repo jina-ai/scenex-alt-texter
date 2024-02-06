@@ -771,7 +771,12 @@ class ShopifyHandler(AltTexter):
         return products
 
     def get_product(self, product_id):
-        pass
+        url = self.shopify_url + f"products/{product_id}.json"
+        response = requests.get(url, headers=self.shopify_headers)
+        product = None
+        if response.status_code == 200:
+            product = response.json()["product"]
+        return product
 
     def add_alts(self, product):
         updated_data = {"id": product["id"]}
@@ -805,3 +810,17 @@ class ShopifyHandler(AltTexter):
                 f"Failed to update product. Status code: {response.status_code}, Response: {response.text}"
             )
             return None
+
+    def update_products(self, products: list = []):
+        if not products:
+            products = self.get_products()
+
+        for product in products:
+            updated_data = self.add_alts(product)
+
+            if "images" in updated_data:
+                response = self.update_product(updated_data)
+            else:
+                log.info("Skipping product. Nothing to update")
+
+        log.info("All done!")
