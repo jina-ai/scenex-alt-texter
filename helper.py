@@ -8,6 +8,7 @@ from difflib import unified_diff
 
 import jwt
 import requests
+# import shopify
 from bs4 import BeautifulSoup
 from lxml.html import diff, fromstring, tostring
 from requests.auth import HTTPBasicAuth
@@ -739,3 +740,68 @@ class Debug:
             file.write(response.content)
 
         return file_path
+
+
+class ShopifyHandler(AltTexter):
+    def __init__(
+        self,
+        url: str,
+        shopify_shop_name: str,
+        shopify_access_token: str,
+        scenex_api_key: str,
+        scenex_url: str = SCENEX_URL,
+    ):
+        super().__init__(self, scenex_url=scenex_url, scenex_api_key=scenex_api_key)
+        self.shopify_access_token = shopify_access_token
+        self.shopify_url = (
+            f"https://{shopify_shop_name}.myshopify.com/admin/api/2024-01/"
+        )
+        self.shopify_headers = {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": self.shopify_access_token,
+        }
+
+    def get_products(self):
+        url = self.shopify_url + "products.json"
+
+        response = requests.get(url, headers=self.shopify_headers)
+        if response.status_code == 200:
+            products = response.json()["products"]
+
+        return products
+
+    def get_product(self, product_id):
+        pass
+
+    def add_alts(self, product):
+        updated_data = {"id": product["id"]}
+        log.info(f"Processing {product['title']}")
+        counter = 0
+        updated_images = []
+        for image in product["images"]:
+            if not image["alt"]:
+                alt_text = self.generate_alt_text(image["src"])
+                image["alt"] = alt_text
+                updated_images.append(image)
+                counter += 1
+
+        if counter:
+            updated_data["images"] = updated_images
+
+        return updated_data
+
+    def update_product(self, updated_data):
+        url = self.shopify_url + f"products/{updated_data['id']}.json"
+        payload = {"product": updated_data}
+        log.info("Updating product")
+        response = requests.put(
+            url, headers=self.shopify_headers, data=json.dumps(payload)
+        )
+        if response.status_code == 200:
+            print("Product updated successfully.")
+            return response.json()["product"]
+        else:
+            print(
+                f"Failed to update product. Status code: {response.status_code}, Response: {response.text}"
+            )
+            return None
