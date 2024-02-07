@@ -27,7 +27,7 @@ if platform == "Ghost":
     ghost_api_key = settings.text_input(label="Ghost Admin API key", type="password")
 
 elif platform == "WordPress":
-    item_types = ["posts", "pages", "media"]
+    item_types = ["posts", "pages"]
     wordpress_url = settings.text_input(label="WordPress URL")
     wordpress_username = settings.text_input(label="WordPress username")
     wordpress_password = settings.text_input(
@@ -69,12 +69,9 @@ if run_button:
             for post_id in post_ids:
                 post = alt_texter._get_post(post_id)
                 st.write(f":gear: Processing **{post['title']}**")
-                # with st.spinner(f"Processing {post['title']}"):
-                # time.sleep(5)
                 post_with_alts = alt_texter.add_alts(post_id)
 
                 if alt_texter._is_post_changed(post, post_with_alts):
-                    # with st.spinner(f"Updating {post['title']} on Ghost"):
                     st.write(f":arrow_up: Updating **{post['title']}** on Ghost")
                     alt_texter.update_post(post_id, post_with_alts)
 
@@ -89,13 +86,14 @@ if run_button:
         )
 
         wordpress_items = []
-        for item_type in wordpress_item_types:
-            with st.spinner(f"Retrieving WordPress {item_type}"):
+        with st.status("Processing WordPress data", expanded=True):
+            for item_type in wordpress_item_types:
+                st.write(f":arrow_down: Retrieving WordPress {item_type}")
                 items = alt_texter._get_items(content_types=wordpress_item_types)
-                wordpress_items.append(items)
+                wordpress_items.extend(items)
 
-        for item in items:
-            with st.spinner(f"Processing {item['title']['rendered']}"):
+            for item in wordpress_items:
+                st.write(f":gear: Processing **{item['title']['rendered']}**")
                 updated_item_data = alt_texter.add_alts(item)
                 alt_texter.update_item(updated_item_data)
                 counter += 1
@@ -108,11 +106,12 @@ if run_button:
             woocommerce_consumer_secret=woocommerce_consumer_secret,
         )
 
-        with st.spinner("Retrieving products"):
+        with st.status("Processing WooCommerce data", expanded=True):
+            st.text(":arrow_down: Retrieving products")
             products = alt_texter.get_products()
 
-        for product in products:
-            with st.spinner(f"Processing {product['name']}"):
+            for product in products:
+                st.text(f":gear: Processing **{product['name']}**")
                 updated_product_data = alt_texter.add_alts(product)
                 alt_texter.update_product(updated_product_data)
                 counter += 1
@@ -125,11 +124,11 @@ if run_button:
             shopify_access_token=shopify_access_token,
         )
 
-        with st.spinner("Retrieving products"):
+        with st.status("Processing WooCommerce data", expanded=True):
             products = alt_texter.get_products()
 
-        for product in products:
-            with st.spinner(f"Processing {product['title']}"):
+            for product in products:
+                st.write(f":gear: Processing **{product['title']}**")
                 updated_product_data = alt_texter.add_alts(product)
                 alt_texter.update_product(updated_product_data)
                 counter += 1
