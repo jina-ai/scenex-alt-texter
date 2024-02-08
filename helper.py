@@ -1,7 +1,7 @@
 import base64
 import json
 import logging
-import tempfile
+# import tempfile
 # import os
 import time
 from difflib import unified_diff
@@ -10,7 +10,7 @@ import jwt
 import requests
 # import shopify
 from bs4 import BeautifulSoup
-from lxml.html import diff, fromstring, tostring
+# from lxml.html import diff, fromstring, tostring
 from requests.auth import HTTPBasicAuth
 from rich.console import Console
 from rich.logging import RichHandler
