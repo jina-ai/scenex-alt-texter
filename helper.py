@@ -544,8 +544,6 @@ class WordPressTagger(AltTexter):
 class HTMLHelper(AltTexter):
     from difflib import unified_diff
 
-    from lxml.html import fromstring, tostring
-
     def __init__(self):
         super().__init__()
 
